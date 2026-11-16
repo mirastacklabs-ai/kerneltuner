@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts/accel"
-	"github.com/mirastacklabs-ai/kerneltuner/internal/fixture"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/fixturetest"
 )
 
 func TestClassify(t *testing.T) {
@@ -31,7 +31,7 @@ func TestClassify(t *testing.T) {
 }
 
 func TestScan(t *testing.T) {
-	root, _, _ := fixture.Load(t, "gpu-8xh100")
+	root, _, _ := fixturetest.Load(t, "gpu-8xh100")
 	devs, err := accel.Scan(root.Sys)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestScan(t *testing.T) {
 }
 
 func TestScanMissingLinkInfo(t *testing.T) {
-	root, _, _ := fixture.Load(t, "gaudi3-8x")
+	root, _, _ := fixturetest.Load(t, "gaudi3-8x")
 	devs, err := accel.Scan(root.Sys)
 	if err != nil || len(devs) != 8 || devs[0].Vendor != "habana" {
 		t.Fatalf("devs=%v err=%v", devs, err)
@@ -59,7 +59,7 @@ func TestScanMissingLinkInfo(t *testing.T) {
 }
 
 func TestScanRDMA(t *testing.T) {
-	root, _, _ := fixture.Load(t, "gpu-8xmi300x")
+	root, _, _ := fixturetest.Load(t, "gpu-8xmi300x")
 	devs, err := accel.ScanRDMA(root.Sys)
 	if err != nil || len(devs) != 8 {
 		t.Fatalf("devs=%d err=%v", len(devs), err)

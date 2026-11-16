@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 
@@ -25,23 +25,34 @@ type Spec struct {
 	Rates       map[string]float64 `yaml:"rates"`
 }
 
-// FixturesDir finds testdata/fixtures by walking up from the working
-// directory until go.mod is found.
+// EnvDir names the environment variable that points at the fixtures directory.
+const EnvDir = "KERNELTUNER_FIXTURES"
+
+var (
+	explicitDir string // set by --fixtures-dir
+	defaultDir  string // set by the fixturetest package, in tests only
+)
+
+// SetDir sets the fixtures directory (the hidden --fixtures-dir flag).
+func SetDir(dir string) { explicitDir = dir }
+
+// SetDefaultDir sets the directory used when neither SetDir nor the
+// environment names one. Only the fixturetest package calls it.
+func SetDefaultDir(dir string) { defaultDir = dir }
+
+// FixturesDir returns the fixtures directory: the --fixtures-dir flag, else
+// $KERNELTUNER_FIXTURES, else (tests only) the module's testdata/fixtures.
+// It never searches the file system upwards from the working directory.
 func FixturesDir() (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", err
+	switch {
+	case explicitDir != "":
+		return explicitDir, nil
+	case os.Getenv(EnvDir) != "":
+		return os.Getenv(EnvDir), nil
+	case defaultDir != "":
+		return defaultDir, nil
 	}
-	for dir := wd; ; {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return filepath.Join(dir, "testdata", "fixtures"), nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errors.New("fixture: go.mod not found above " + wd)
-		}
-		dir = parent
-	}
+	return "", errors.New("fixture: no fixtures directory: pass --fixtures-dir DIR or set " + EnvDir)
 }
 
 // Parse loads fixture name from the repo's fixtures dir with extends resolved.
@@ -101,12 +112,26 @@ func merge[V any](dst *map[string]V, src map[string]V) {
 	}
 }
 
-func safeJoin(dir, rel string) (string, error) {
-	p := filepath.Join(dir, rel)
-	if p != dir && !strings.HasPrefix(p, dir+string(filepath.Separator)) {
+// checkRel validates a fixture-relative path: relative, inside the root.
+func checkRel(rel string) (string, error) {
+	c := filepath.Clean(filepath.FromSlash(rel))
+	if filepath.IsAbs(c) || c == "." || c == ".." || strings.HasPrefix(c, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("fixture: path %q escapes root", rel)
 	}
-	return p, nil
+	return c, nil
+}
+
+// checkLink rejects absolute symlink targets and targets that leave the
+// fixture root once resolved relative to the link's directory.
+func checkLink(rel, target string) error {
+	if filepath.IsAbs(target) || strings.HasPrefix(target, "/") {
+		return fmt.Errorf("fixture: symlink %q has absolute target %q", rel, target)
+	}
+	res := filepath.Join(filepath.Dir(rel), target)
+	if res == ".." || strings.HasPrefix(res, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("fixture: symlink %q target %q escapes the fixture root", rel, target)
+	}
+	return nil
 }
 
 // Materialize writes fixture name into dir and returns the Root plus the
@@ -119,35 +144,68 @@ func Materialize(dir, name string) (facts.Root, map[string]float64, map[string]f
 	return MaterializeSpec(dir, s)
 }
 
-// MaterializeSpec writes an already parsed Spec into dir.
+// MaterializeSpec writes an already parsed Spec into dir. Every entry is
+// created through an os.Root, so no component can resolve outside dir, and
+// files are opened with O_NOFOLLOW.
 func MaterializeSpec(dir string, s *Spec) (facts.Root, map[string]float64, map[string]float64, error) {
-	for _, sub := range []string{"proc", "sys", "etc", "run", "var"} {
-		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
-			return facts.Root{}, nil, nil, err
-		}
+	fail := func(err error) (facts.Root, map[string]float64, map[string]float64, error) {
+		return facts.Root{}, nil, nil, err
 	}
+	// Validate everything before touching the disk.
+	files := map[string]string{}
 	for rel, content := range s.Files {
-		p, err := safeJoin(dir, rel)
+		c, err := checkRel(rel)
 		if err != nil {
-			return facts.Root{}, nil, nil, err
+			return fail(err)
 		}
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return facts.Root{}, nil, nil, err
+		files[c] = content
+	}
+	links := map[string]string{}
+	for rel, target := range s.Symlinks {
+		c, err := checkRel(rel)
+		if err != nil {
+			return fail(err)
 		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			return facts.Root{}, nil, nil, err
+		if err := checkLink(c, target); err != nil {
+			return fail(err)
+		}
+		links[c] = target
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fail(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fail(err)
+	}
+	defer func() { _ = root.Close() }()
+	for _, sub := range []string{"proc", "sys", "etc", "run", "var"} {
+		if err := root.MkdirAll(sub, 0o755); err != nil {
+			return fail(err)
 		}
 	}
-	for rel, target := range s.Symlinks {
-		p, err := safeJoin(dir, rel)
+	for rel, content := range files {
+		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+			return fail(err)
+		}
+		f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
 		if err != nil {
-			return facts.Root{}, nil, nil, err
+			return fail(err)
 		}
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return facts.Root{}, nil, nil, err
+		if _, err := f.WriteString(content); err != nil {
+			_ = f.Close()
+			return fail(err)
 		}
-		if err := os.Symlink(target, p); err != nil {
-			return facts.Root{}, nil, nil, err
+		if err := f.Close(); err != nil {
+			return fail(err)
+		}
+	}
+	for rel, target := range links {
+		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
+			return fail(err)
+		}
+		if err := root.Symlink(target, rel); err != nil {
+			return fail(err)
 		}
 	}
 	values, rates := s.Values, s.Rates
@@ -158,14 +216,4 @@ func MaterializeSpec(dir string, s *Spec) (facts.Root, map[string]float64, map[s
 		rates = map[string]float64{}
 	}
 	return facts.RootAt(dir), values, rates, nil
-}
-
-// Load materializes fixture name into t.TempDir(). It fails the test on error.
-func Load(t testing.TB, name string) (facts.Root, map[string]float64, map[string]float64) {
-	t.Helper()
-	root, values, rates, err := Materialize(t.TempDir(), name)
-	if err != nil {
-		t.Fatalf("fixture.Load(%q): %v", name, err)
-	}
-	return root, values, rates
 }

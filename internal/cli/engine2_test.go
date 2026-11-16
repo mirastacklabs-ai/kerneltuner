@@ -8,6 +8,7 @@ import (
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/fixture"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/fixturetest"
 )
 
 // validate --rules-dir on a missing directory, or on a directory holding a
@@ -48,7 +49,7 @@ func TestValidateRulesDirBadSourcesNamesFileAndLine(t *testing.T) {
 // The fixture round trip also covers the mount table, kernel config,
 // oom_score_adj and nproc/core limits. Remote mount devices are redacted.
 func TestCaptureRoundTripEngineFacts2(t *testing.T) {
-	src, _, _ := fixture.Load(t, "engine-facts-2")
+	src, _, _ := fixturetest.Load(t, "engine-facts-2")
 	want, err := facts.Collect(src)
 	if err != nil {
 		t.Fatal(err)

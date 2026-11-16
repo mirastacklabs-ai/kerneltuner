@@ -13,6 +13,7 @@ import (
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/fixture"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/fixturetest"
 )
 
 func runCapture(t *testing.T, args ...string) []byte {
@@ -31,7 +32,7 @@ func runCapture(t *testing.T, args ...string) []byte {
 func TestCaptureFixtureRoundTrip(t *testing.T) {
 	for _, name := range []string{"web-16c-64g-nginx", "gpu-8xh100", "container-k8s-redis", "legacy-4.9-c10k", "bpftune-tuned-host", "gpu-8xmi300x"} {
 		t.Run(name, func(t *testing.T) {
-			src, _, _ := fixture.Load(t, name)
+			src, _, _ := fixturetest.Load(t, name)
 			want, err := facts.Collect(src)
 			if err != nil {
 				t.Fatal(err)
@@ -189,7 +190,7 @@ func TestCapturePrivacy(t *testing.T) {
 }
 
 func TestCaptureArchive(t *testing.T) {
-	src, _, _ := fixture.Load(t, "gpu-8xh100")
+	src, _, _ := fixturetest.Load(t, "gpu-8xh100")
 	out := filepath.Join(t.TempDir(), "cap.tar.gz")
 	runCapture(t, "--root", filepath.Dir(src.Proc), "-o", out)
 

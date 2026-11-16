@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -46,8 +47,14 @@ func addFixtureFlag(cmd *cobra.Command, g *globalOpts) {
 	_ = cmd.Flags().MarkHidden("fixture")
 }
 
+// fixtureEUID is a variable so tests can simulate root.
+var fixtureEUID = os.Geteuid
+
 // materializeFixture builds the root for --fixture into a temp dir.
 func (p *pipeline) materializeFixture(g *globalOpts) error {
+	if fixtureEUID() == 0 {
+		return errors.New("refusing to run as root: --fixture is a development flag")
+	}
 	spec, err := fixture.Parse(g.Fixture)
 	if err != nil {
 		return err
