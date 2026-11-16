@@ -90,6 +90,9 @@
     - url: https://raw.githubusercontent.com/apache/kafka/trunk/server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java
       section: "SOCKET_LISTEN_BACKLOG_SIZE_DOC"
       quote: "The maximum number of pending connections on the socket."
+    - url: https://raw.githubusercontent.com/apache/kafka/trunk/server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java
+      section: "SOCKET_LISTEN_BACKLOG_SIZE_DOC (second sentence)"
+      quote: "In Linux, you may also need to configure <code>somaxconn</code> and <code>tcp_max_syn_backlog</code> kernel parameters"
     - url: https://docs.kernel.org/networking/ip-sysctl.html
       section: "somaxconn"
       quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"

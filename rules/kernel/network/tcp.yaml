@@ -158,9 +158,11 @@
   verify: "`tc qdisc show dev <nic>` lists fq on the interfaces carrying BBR traffic"
   sources:
     - url: https://raw.githubusercontent.com/torvalds/linux/master/net/ipv4/tcp_bbr.c
-      section: bbr_tso_segs_goal
+      section: header NOTE
       quote: >-
-        With TSQ and departure time pacing at lower layers (e.g. fq),
+        NOTE: BBR might be used with the fq qdisc ("man tc-fq") with pacing enabled,
+        otherwise TCP stack falls back to an internal pacing using one high
+        resolution timer per TCP socket and may use more resources.
     - url: https://kernelnewbies.org/Linux_4.13
       section: Networking
       quote: >-

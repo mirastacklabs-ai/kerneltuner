@@ -8,5 +8,6 @@ for s in "$D"/0[1-6]-*.sh; do
   out=$(sh "$s" 2>&1); echo "$out"
   echo "$out" | grep -q '^FAIL' && rc=1
 done
+docker volume rm "${KT_E2E_BINVOL:-kt-e2e-bin}" >/dev/null 2>&1 || true
 [ $rc -eq 0 ] && echo "E2E: all passed" || echo "E2E: FAILURES"
 exit $rc

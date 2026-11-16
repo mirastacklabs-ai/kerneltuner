@@ -28,7 +28,7 @@ Rules of thumb:
 - `section` is the nearest heading or the anchor (`#tcp_rmem`), so a reader can find the passage.
 - Bump `last_reviewed` in `sources.yaml` when you re-read the page.
 
-`kerneltuner validate` rejects a quote over 300 characters and warns about sources without one; `kerneltuner validate --strict-citations` makes that an error (it will become the default once quotes are backfilled). `kerneltuner sources --check [--only <pack>]` is the opt-in network check.
+`kerneltuner validate` rejects a quote over 300 characters and a source without one (`--strict-citations` is a no-op kept for compatibility). `kerneltuner sources --check [--only <pack>]` is the opt-in network check.
 
 ## Ecosystem data
 

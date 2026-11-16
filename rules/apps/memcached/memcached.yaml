@@ -20,7 +20,7 @@
   sources:
     - url: https://raw.githubusercontent.com/memcached/memcached/master/doc/memcached.1
       section: "-b, --listen-backlog"
-      quote: "The default is 1024."
+      quote: "--listen-backlog=<num> Set the backlog queue limit to <num> connections. The default is 1024."
     - url: https://docs.kernel.org/networking/ip-sysctl.html
       section: "somaxconn"
       quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"

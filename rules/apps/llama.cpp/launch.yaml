@@ -69,10 +69,10 @@
       quote: "mlock: force system to keep model in RAM rather than swapping or compressing"
     - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/b4000/examples/server/README.md
       section: "Server options: --mlock"
-      quote: "force system to keep model in RAM rather than swapping or compressing(env: LLAMA_ARG_MLOCK)"
+      quote: "force system to keep model in RAM rather than swapping or compressing<br/>(env: LLAMA_ARG_MLOCK)"
     - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/tools/server/README.md
       section: "Server options: --mlock"
-      quote: "force system to keep model in RAM rather than swapping or compressing(env: LLAMA_ARG_MLOCK)"
+      quote: "force system to keep model in RAM rather than swapping or compressing<br/>(env: LLAMA_ARG_MLOCK)"
   tests:
     - fixture: cpu-amx-2s
       expect: { status: firing }
