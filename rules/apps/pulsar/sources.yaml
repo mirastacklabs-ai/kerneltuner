@@ -1,0 +1,8 @@
+- url: https://pulsar.apache.org/docs/next/deploy-bare-metal/
+  project: pulsar
+  covers: bare-metal deployment guide, reviewed; contains no host-level OS tuning
+  last_reviewed: 2026-11-16
+- url: https://bookkeeper.apache.org/docs/reference/config
+  project: bookkeeper
+  covers: BookKeeper configuration reference, reviewed; app-level settings only
+  last_reviewed: 2026-11-16

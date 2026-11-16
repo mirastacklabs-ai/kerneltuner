@@ -1,0 +1,4 @@
+- url: https://docs.nats.io/running-a-nats-service/introduction/installation
+  project: nats
+  covers: installation guide, reviewed; contains no host-level OS tuning
+  last_reviewed: 2026-11-16

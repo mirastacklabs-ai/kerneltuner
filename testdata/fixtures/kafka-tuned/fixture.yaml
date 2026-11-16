@@ -1,0 +1,14 @@
+description: "Kafka broker with LimitNOFILE 128000 and vm.max_map_count 262144"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3100/cgroup": "0::/system.slice/kafka.service\n"
+  "proc/3100/cmdline": "/usr/bin/java\u0000-Xmx6g\u0000-Xms6g\u0000-cp\u0000/opt/kafka/libs/*\u0000kafka.Kafka\u0000/opt/kafka/config/server.properties\u0000"
+  "proc/3100/comm": "java\n"
+  "proc/3100/fd/0": ""
+  "proc/3100/fd/1": ""
+  "proc/3100/fd/2": ""
+  "proc/3100/fd/3": ""
+  "proc/3100/fd/4": ""
+  "proc/3100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            128000               524288               files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/sys/vm/max_map_count": "262144\n"
