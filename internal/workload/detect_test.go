@@ -96,7 +96,7 @@ func TestDetect(t *testing.T) {
 		}
 	}
 	want := App{Name: "nginx", PIDs: []int{200, 300}, Ports: []int{80, 8080}, Unit: "nginx.service",
-		NoFileSoft: 512, NoFileHard: 4096, MemlockSoft: 8192, MaxOpenFDs: 30}
+		NoFileSoft: 512, NoFileHard: 4096, MemlockSoft: 8192, MaxOpenFDs: 30, NoFileSoftMax: 1024}
 	if !reflect.DeepEqual(ng, want) {
 		t.Fatalf("nginx: %+v", ng)
 	}

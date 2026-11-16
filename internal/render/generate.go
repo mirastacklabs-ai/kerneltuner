@@ -73,8 +73,11 @@ func Generate(format string, recs []advisor.Recommendation, m Meta) (map[string]
 }
 
 // pick returns recommend-status results of the given kinds, in a stable order.
+// Duplicates targeting the same (kind, param, target) are merged first
+// (advisor.Reconcile), so each setting appears once.
 func pick(recs []advisor.Recommendation, kinds ...string) []advisor.Recommendation {
 	var out []advisor.Recommendation
+	recs, _ = advisor.Reconcile(recs)
 	for _, r := range recs {
 		if r.Status != advisor.StatusRecommend {
 			continue
@@ -103,7 +106,24 @@ func comment(r advisor.Recommendation) string {
 	if len(r.Sources) > 0 {
 		src = " — " + r.Sources[0]
 	}
-	return fmt.Sprintf("# %s: %s%s\n", r.RuleID, r.Title, src)
+	ids := r.RuleID
+	if len(r.Contributors) > 1 {
+		ids = strings.Join(r.Contributors, ", ")
+	}
+	c := fmt.Sprintf("# %s: %s%s\n", ids, r.Title, src)
+	if len(r.Contributors) > 1 && r.Note != "" {
+		c += "# " + r.Note + "\n"
+	}
+	return c
+}
+
+// targets lists the items a recommendation covers: Targets for a summarized
+// foreach, else the single Target.
+func targets(r advisor.Recommendation) []string {
+	if len(r.Targets) > 0 {
+		return r.Targets
+	}
+	return []string{r.Target}
 }
 
 // Sysctl renders /etc/sysctl.d/90-kerneltuner.conf. Empty when nothing applies.
@@ -156,7 +176,11 @@ func Limits(recs []advisor.Recommendation, m Meta) (dropins map[string]string, l
 			fb.WriteString("# Fallback for apps not run by systemd (/etc/security/limits.d/). Applies at next login.\n")
 			fb.WriteString("# '*' covers all users; narrow it to the app's user.\n")
 		}
-		fmt.Fprintf(&fb, "\n# %s (%s): %s\n", r.RuleID, r.Target, r.Title)
+		ids := r.RuleID
+		if len(r.Contributors) > 1 {
+			ids = strings.Join(r.Contributors, ", ")
+		}
+		fmt.Fprintf(&fb, "\n# %s (%s): %s\n", ids, r.Target, r.Title)
 		item, val := limitsConfLine(r)
 		fmt.Fprintf(&fb, "*\tsoft\t%s\t%s\n*\thard\t%s\t%s\n", item, val, item, val)
 	}
@@ -209,7 +233,9 @@ func Tuned(recs []advisor.Recommendation, m Meta) string {
 		b.WriteString("\n[sysfs]\n")
 		for _, r := range sysfs {
 			b.WriteString(comment(r))
-			fmt.Fprintf(&b, "%s=%s\n", strings.ReplaceAll(r.Param, "{item}", r.Target), r.Proposed)
+			for _, t := range targets(r) {
+				fmt.Fprintf(&b, "%s=%s\n", strings.ReplaceAll(r.Param, "{item}", t), r.Proposed)
+			}
 		}
 	}
 	if len(cmd) > 0 {

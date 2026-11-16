@@ -8,8 +8,11 @@ import (
 	"path"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/fixture"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/metrics"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/rules"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/workload"
@@ -24,6 +27,44 @@ type pipeline struct {
 	Rules    []rules.Rule // after --domain/--pack filtering
 	Eco      rules.Ecosystem
 	Sources  []rules.Source
+
+	fxValues, fxRates map[string]float64 // injected by --fixture
+	tmpDir            string             // materialized --fixture, removed by Close
+}
+
+// Close removes the temp directory of a --fixture run. Safe to call always.
+func (p *pipeline) Close() {
+	if p != nil && p.tmpDir != "" {
+		_ = os.RemoveAll(p.tmpDir)
+		p.tmpDir = ""
+	}
+}
+
+// addFixtureFlag registers the hidden --fixture NAME dev flag on cmd.
+func addFixtureFlag(cmd *cobra.Command, g *globalOpts) {
+	cmd.Flags().StringVar(&g.Fixture, "fixture", "", "dev: use testdata/fixtures/NAME (with its values and rates) as the root")
+	_ = cmd.Flags().MarkHidden("fixture")
+}
+
+// materializeFixture builds the root for --fixture into a temp dir.
+func (p *pipeline) materializeFixture(g *globalOpts) error {
+	spec, err := fixture.Parse(g.Fixture)
+	if err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp("", "kt-fixture-")
+	if err != nil {
+		return err
+	}
+	root, values, rates, err := fixture.MaterializeSpec(dir, spec)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return err
+	}
+	p.tmpDir, p.fxValues, p.fxRates = dir, values, rates
+	p.Root = root
+	g.fixRoot = &root
+	return nil
 }
 
 // loadPipeline collects facts, detects the workload and loads the rules
@@ -34,15 +75,23 @@ func loadPipeline(g *globalOpts) (*pipeline, error) {
 	if err != nil {
 		return nil, fmt.Errorf("--workload: %w", err)
 	}
+	if g.Fixture != "" {
+		if err := p.materializeFixture(g); err != nil {
+			return nil, fmt.Errorf("--fixture: %w", err)
+		}
+	}
 	if p.Facts, err = facts.Collect(p.Root); err != nil {
+		p.Close()
 		return nil, fmt.Errorf("collect facts: %w", err)
 	}
 	if p.Workload, err = workload.Detect(p.Root, p.Facts); err != nil {
+		p.Close()
 		return nil, fmt.Errorf("detect workload: %w", err)
 	}
 	p.Workload.Declare(declared)
 	all, eco, srcs, err := loadRules(g)
 	if err != nil {
+		p.Close()
 		return nil, err
 	}
 	p.Eco, p.Sources = eco, srcs
@@ -75,6 +124,17 @@ func loadRules(g *globalOpts) ([]rules.Rule, rules.Ecosystem, []rules.Source, er
 // sample reads metrics once (d <= 0: values only, no rates) or twice, d apart.
 // Failures are not fatal: empty maps are returned and a warning is recorded.
 func (p *pipeline) sample(ctx context.Context, d time.Duration) (values, rates map[string]float64, err error) {
+	values, rates, err = p.sampleLive(ctx, d)
+	for k, v := range p.fxValues { // --fixture: injected values and rates win
+		values[k] = v
+	}
+	for k, v := range p.fxRates {
+		rates[k] = v
+	}
+	return values, rates, err
+}
+
+func (p *pipeline) sampleLive(ctx context.Context, d time.Duration) (values, rates map[string]float64, err error) {
 	values, rates = map[string]float64{}, map[string]float64{}
 	first, serr := metrics.Sample(p.Root)
 	if serr != nil {

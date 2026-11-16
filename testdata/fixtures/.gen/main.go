@@ -486,7 +486,7 @@ func main() {
 		root = os.Args[1]
 	}
 	for _, f := range []*fx{
-		base(), web(), legacy(), k8sRedis(), h100(), mi300x(), gaudi3(), intelMax(), amx(), bpftuneTuned(),
+		base(), web(), legacy(), k8sRedis(), h100(), mi300x(), gaudi3(), intelMax(), amx(), bpftuneTuned(), engineFacts(),
 	} {
 		f.emit(root)
 	}

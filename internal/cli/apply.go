@@ -39,6 +39,7 @@ func newApplyCmd(g *globalOpts) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer p.Close()
 			values, rates, err := p.sample(cmd.Context(), 0)
 			if err != nil {
 				return err
@@ -46,6 +47,7 @@ func newApplyCmd(g *globalOpts) *cobra.Command {
 			return runApply(cmd.OutOrStdout(), cmd.ErrOrStderr(), g, p.evaluate(values, rates), ruleIDs, dry)
 		},
 	}
+	addFixtureFlag(cmd, g)
 	cmd.Flags().StringArray("rule", nil, "apply only this rule ID (repeatable)")
 	cmd.Flags().Bool("dry-run", false, "show what would change without writing")
 	cmd.Flags().Bool("yes", false, "confirm writing (required unless --dry-run)")
@@ -142,5 +144,8 @@ func printPlan(out io.Writer, plan *apply.Plan) {
 	_ = tw.Flush()
 	for _, s := range plan.Skipped {
 		_, _ = fmt.Fprintf(out, "skipped %s: %s\n", s.RuleID, s.Reason)
+	}
+	for _, w := range plan.Warnings {
+		_, _ = fmt.Fprintf(out, "warning: merged duplicates: %s\n", w)
 	}
 }

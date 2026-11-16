@@ -11,8 +11,8 @@ func TestClassify(t *testing.T) {
 	cases := []struct{ vendor, class, want string }{
 		{"0x10de", "0x030200", "nvidia"},
 		{"0x10de", "0x030000", "nvidia"},
-		{"0x10de", "0x068000", ""}, // NVSwitch bridge
-		{"0x10de", "0x040300", ""}, // HDMI audio
+		{"0x10de", "0x068000", "nvidia"}, // NVSwitch bridge (Kind nvswitch)
+		{"0x10de", "0x040300", ""},       // HDMI audio
 		{"0x1002", "0x038000", "amd"},
 		{"0x1002", "0x120000", "amd"},
 		{"0x1002", "0x060400", ""},

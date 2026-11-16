@@ -201,6 +201,12 @@ func Detect(r facts.Root, f *facts.Facts) (*Workload, error) {
 			if app.Unit == "" {
 				app.Unit = p.Unit
 			}
+			if app.Container == "" {
+				app.Container = p.Container
+			}
+			if p.NoFileSoft > app.NoFileSoftMax {
+				app.NoFileSoftMax = p.NoFileSoft
+			}
 			if p.NoFileSoft != 0 && (app.NoFileSoft == 0 || p.NoFileSoft < app.NoFileSoft) {
 				app.NoFileSoft = p.NoFileSoft
 			}

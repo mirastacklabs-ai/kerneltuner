@@ -36,20 +36,25 @@ type Env struct {
 	Current  any                `expr:"current"`
 	Item     any                `expr:"item"`
 
-	Kver       func(string) (bool, error)      `expr:"kver"`
-	Exists     func(string) bool               `expr:"exists"`
-	Sysctl     func(string) string             `expr:"sysctl"`
-	SysctlNum  func(string) float64            `expr:"sysctlNum"`
-	Metric     func(string) float64            `expr:"metric"`
-	Rate       func(string) float64            `expr:"rate"`
-	HasApp     func(string) bool               `expr:"hasApp"`
-	CPUFlag    func(string) bool               `expr:"cpuFlag"`
-	AccelCount func(string) int                `expr:"accelCount"`
-	Module     func(string) bool               `expr:"module"`
-	Bytes      func(string) (float64, error)   `expr:"bytes"`
-	Clamp      func(x, lo, hi float64) float64 `expr:"clamp"`
-	Pow2Ceil   func(x float64) float64         `expr:"pow2ceil"`
-	Contains   func(list any, s any) bool      `expr:"contains_"`
+	Kver       func(string) (bool, error) `expr:"kver"`
+	Exists     func(string) bool          `expr:"exists"`
+	Sysctl     func(string) string        `expr:"sysctl"`
+	SysctlNum  func(string) float64       `expr:"sysctlNum"`
+	Metric     func(string) float64       `expr:"metric"`
+	Rate       func(string) float64       `expr:"rate"`
+	HasApp     func(string) bool          `expr:"hasApp"`
+	CPUFlag    func(string) bool          `expr:"cpuFlag"`
+	AccelCount func(string) int           `expr:"accelCount"`
+	Module     func(string) bool          `expr:"module"`
+	// Numeric helpers take ints or floats and return an exact int when every
+	// argument is an int (so 9223372036854775807 never goes through float64).
+	Bytes          func(string) (any, error)        `expr:"bytes"`
+	Clamp          func(x, lo, hi any) (any, error) `expr:"clamp"`
+	Pow2Ceil       func(x any) (any, error)         `expr:"pow2ceil"`
+	Contains       func(list any, s any) bool       `expr:"contains_"`
+	AccelKindCount func(vendor, kind string) int    `expr:"accelKindCount"`
+	CmdlineHas     func(key, item string) bool      `expr:"cmdlineHas"`
+	AppContainer   func(app string) string          `expr:"appContainer"`
 }
 
 // NewEnv builds the runtime environment. current and item may be nil.
@@ -82,27 +87,61 @@ func NewEnv(in EnvInput, current, item any) Env {
 		HasApp:    in.Workload.Has,
 		CPUFlag:   func(n string) bool { return f.CPU.Flags[n] },
 		AccelCount: func(vendor string) int {
-			n := 0
+			n := 0 // NVSwitch bridges are not compute devices
 			for _, a := range f.Accel {
-				if vendor == "" || a.Vendor == vendor {
+				if (vendor == "" || a.Vendor == vendor) && a.Kind != "nvswitch" {
 					n++
 				}
 			}
 			return n
 		},
-		Module: func(n string) bool { return f.Modules[n] },
-		Bytes:  ParseBytes,
-		Clamp: func(x, lo, hi float64) float64 {
-			return math.Min(math.Max(x, lo), hi)
-		},
-		Pow2Ceil: func(x float64) float64 {
-			if x <= 1 {
-				return 1
+		AccelKindCount: func(vendor, kind string) int {
+			n := 0
+			for _, a := range f.Accel {
+				k := a.Kind
+				if k == "" {
+					k = "gpu"
+				}
+				if (vendor == "" || a.Vendor == vendor) && (kind == "" || k == kind) {
+					n++
+				}
 			}
-			return math.Pow(2, math.Ceil(math.Log2(x)))
+			return n
 		},
+		CmdlineHas: func(key, item string) bool { return CmdlineHas(f.Kernel.CmdlineArgs, key, item) },
+		AppContainer: func(name string) string {
+			for _, a := range in.Workload.Apps {
+				if a.Name == name && a.Container != "" {
+					return a.Container
+				}
+			}
+			return ""
+		},
+		Module:   func(n string) bool { return f.Modules[n] },
+		Bytes:    bytesFn,
+		Clamp:    clampFn,
+		Pow2Ceil: pow2ceilFn,
 		Contains: containsFn,
 	}
+}
+
+// CmdlineHas reports whether kernel cmdline key has item among its
+// comma-separated values: pci=realloc=off,nommconf has "realloc=off". An
+// empty item tests only that the key is present.
+func CmdlineHas(args map[string]string, key, item string) bool {
+	v, ok := args[key]
+	if !ok {
+		return false
+	}
+	if item == "" || v == item {
+		return true
+	}
+	for _, e := range strings.Split(v, ",") {
+		if strings.TrimSpace(e) == item {
+			return true
+		}
+	}
+	return false
 }
 
 func containsFn(list, s any) bool {

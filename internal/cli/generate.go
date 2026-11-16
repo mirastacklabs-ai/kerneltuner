@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/render"
 )
 
@@ -24,11 +25,18 @@ func newGenerateCmd(g *globalOpts) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer p.Close()
 			values, rates, err := p.sample(cmdContext(cmd), 0)
 			if err != nil {
 				return err
 			}
-			files, err := render.Generate(format, p.evaluate(values, rates), p.meta())
+			recs := p.evaluate(values, rates)
+			for _, c := range advisor.Conflicts(recs) {
+				if !c.Resolved {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: rules disagree: %s\n", c)
+				}
+			}
+			files, err := render.Generate(format, recs, p.meta())
 			if err != nil {
 				return err
 			}
@@ -61,6 +69,7 @@ func newGenerateCmd(g *globalOpts) *cobra.Command {
 			return nil
 		},
 	}
+	addFixtureFlag(cmd, g)
 	cmd.Flags().String("format", "all", strings.Join(render.Formats, "|"))
 	cmd.Flags().String("out", "", "write files into DIR instead of stdout")
 	return cmd

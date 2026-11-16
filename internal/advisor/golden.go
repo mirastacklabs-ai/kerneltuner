@@ -3,7 +3,9 @@ package advisor
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/fixture"
@@ -45,15 +47,153 @@ func RunGolden(rs []rules.Rule, eco rules.Ecosystem, fixturesDir string) []Golde
 		}
 		fixturesDir = dir
 	}
+	cache := newFixtureCache(fixturesDir)
+	defer cache.close()
+	var names []string
 	for _, r := range rs {
 		for _, t := range r.Tests {
-			out = append(out, runGoldenTest(r, t, eco, fixturesDir))
+			names = append(names, t.Fixture)
+		}
+	}
+	cache.preload(names)
+	for _, r := range rs {
+		for _, t := range r.Tests {
+			out = append(out, runGoldenTest(r, t, eco, cache))
 		}
 	}
 	return out
 }
 
-func runGoldenTest(r rules.Rule, t rules.RuleTest, eco rules.Ecosystem, fixturesDir string) (res GoldenResult) {
+// goldenFixture is a fixture materialized and collected once per RunGolden.
+type goldenFixture struct {
+	root          facts.Root
+	values, rates map[string]float64
+	facts         *facts.Facts
+	workload      *workload.Workload
+	err           error
+}
+
+// fixtureCache materializes and collects each fixture once, keyed by name,
+// under one temp directory removed by close.
+type fixtureCache struct {
+	fixturesDir string
+	tmp         string
+	byName      map[string]*goldenFixture
+}
+
+func newFixtureCache(fixturesDir string) *fixtureCache {
+	return &fixtureCache{fixturesDir: fixturesDir, byName: map[string]*goldenFixture{}}
+}
+
+// close removes every materialized fixture, in parallel (the work is
+// syscall-bound: thousands of tiny files).
+func (c *fixtureCache) close() {
+	if c.tmp == "" {
+		return
+	}
+	ents, _ := os.ReadDir(c.tmp)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, ioWorkers)
+	for _, e := range ents {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(p string) {
+			defer wg.Done()
+			_ = os.RemoveAll(p)
+			<-sem
+		}(filepath.Join(c.tmp, e.Name()))
+	}
+	wg.Wait()
+	_ = os.RemoveAll(c.tmp)
+}
+
+// ioWorkers bounds the parallel materialize/collect/remove workers.
+const ioWorkers = 8
+
+// preload materializes and collects every distinct fixture in names in
+// parallel; get then only reads the cache.
+func (c *fixtureCache) preload(names []string) {
+	if c.tmp == "" {
+		tmp, err := os.MkdirTemp("", "kt-golden-")
+		if err != nil {
+			return // get reports the error per fixture
+		}
+		c.tmp = tmp
+	}
+	var uniq []string
+	seen := map[string]bool{}
+	for _, n := range names {
+		if !seen[n] {
+			seen[n] = true
+			uniq = append(uniq, n)
+		}
+	}
+	res := make([]*goldenFixture, len(uniq))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, ioWorkers)
+	for i, n := range uniq {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, n string) {
+			defer wg.Done()
+			res[i] = c.load(n)
+			<-sem
+		}(i, n)
+	}
+	wg.Wait()
+	for i, n := range uniq {
+		c.byName[n] = res[i]
+	}
+}
+
+func (c *fixtureCache) get(name string) *goldenFixture {
+	if g, ok := c.byName[name]; ok {
+		return g
+	}
+	g := c.load(name)
+	c.byName[name] = g
+	return g
+}
+
+func (c *fixtureCache) load(name string) (g *goldenFixture) {
+	g = &goldenFixture{}
+	defer func() {
+		if p := recover(); p != nil {
+			g.err = fmt.Errorf("panic: %v", p)
+		}
+	}()
+	spec, err := fixture.ParseIn(c.fixturesDir, name)
+	if err != nil {
+		g.err = err
+		return g
+	}
+	if c.tmp == "" {
+		if c.tmp, err = os.MkdirTemp("", "kt-golden-"); err != nil {
+			g.err = err
+			return g
+		}
+	}
+	dir, err := os.MkdirTemp(c.tmp, "fx-")
+	if err != nil {
+		g.err = err
+		return g
+	}
+	g.root, g.values, g.rates, err = fixture.MaterializeSpec(dir, spec)
+	if err != nil {
+		g.err = fmt.Errorf("materialize: %w", err)
+		return g
+	}
+	if g.facts, err = facts.Collect(g.root); err != nil {
+		g.err = fmt.Errorf("collect: %w", err)
+		return g
+	}
+	if g.workload, err = workload.Detect(g.root, g.facts); err != nil {
+		g.err = fmt.Errorf("detect: %w", err)
+	}
+	return g
+}
+
+func runGoldenTest(r rules.Rule, t rules.RuleTest, eco rules.Ecosystem, cache *fixtureCache) (res GoldenResult) {
 	res = GoldenResult{RuleID: r.ID, Fixture: t.Fixture}
 	fail := func(format string, a ...any) GoldenResult {
 		res.Message = fmt.Sprintf(format, a...)
@@ -64,28 +204,11 @@ func runGoldenTest(r rules.Rule, t rules.RuleTest, eco rules.Ecosystem, fixtures
 			res = fail("panic: %v", p)
 		}
 	}()
-	spec, err := fixture.ParseIn(fixturesDir, t.Fixture)
-	if err != nil {
-		return fail("%v", err)
+	g := cache.get(t.Fixture)
+	if g.err != nil {
+		return fail("%v", g.err)
 	}
-	dir, err := os.MkdirTemp("", "kt-golden-")
-	if err != nil {
-		return fail("%v", err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	root, values, rates, err := fixture.MaterializeSpec(dir, spec)
-	if err != nil {
-		return fail("materialize: %v", err)
-	}
-	f, err := facts.Collect(root)
-	if err != nil {
-		return fail("collect: %v", err)
-	}
-	w, err := workload.Detect(root, f)
-	if err != nil {
-		return fail("detect: %v", err)
-	}
-	recs := Evaluate([]rules.Rule{r}, Input{Facts: f, Workload: w, Values: values, Rates: rates, Root: root, Ecosystem: eco})
+	recs := Evaluate([]rules.Rule{r}, Input{Facts: g.facts, Workload: g.workload, Values: g.values, Rates: g.rates, Root: g.root, Ecosystem: eco})
 	res.Got = recs
 
 	var cands []Recommendation

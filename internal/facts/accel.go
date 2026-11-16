@@ -1,6 +1,8 @@
 package facts
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -10,7 +12,9 @@ import (
 func collectAccel(r Root, f *Facts) {
 	devs, err := accel.Scan(r.Sys)
 	if err != nil {
-		f.warnf("cannot scan PCI devices: %v", err)
+		if !errors.Is(err, fs.ErrNotExist) { // no PCI bus (fixtures, containers) is not worth a warning
+			f.warnf("cannot scan PCI devices: %v", err)
+		}
 		return
 	}
 	for _, d := range devs {
@@ -19,7 +23,7 @@ func collectAccel(r Root, f *Facts) {
 			Class: d.Class, Driver: d.Driver, NUMANode: d.NUMANode,
 			LinkSpeed: d.LinkSpeed, LinkSpeedMax: d.LinkSpeedMax,
 			LinkWidth: d.LinkWidth, LinkWidthMax: d.LinkWidthMax,
-			IOMMUGroup: d.IOMMUGroup,
+			IOMMUGroup: d.IOMMUGroup, Kind: d.Kind,
 		})
 	}
 }

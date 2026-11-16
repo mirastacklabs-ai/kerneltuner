@@ -20,30 +20,49 @@ type Device struct {
 	LinkSpeed, LinkSpeedMax                    string
 	LinkWidth, LinkWidthMax                    int
 	IOMMUGroup                                 string
+	// Kind is "gpu", "nvswitch" or "npu".
+	Kind string
 }
+
+// Kind classifications.
+const (
+	KindGPU      = "gpu"
+	KindNVSwitch = "nvswitch"
+	KindNPU      = "npu"
+)
 
 // Classify maps a PCI vendor ID ("0x10de") and class ("0x030200") to an
 // accelerator vendor name, or "" when the function is not an accelerator.
-func Classify(vendorID, class string) string {
+func Classify(vendor, class string) string {
+	v, _ := ClassifyKind(vendor, class)
+	return v
+}
+
+// ClassifyKind is Classify plus the device kind: "gpu", "nvswitch" (NVIDIA
+// bridge class 0x0680) or "npu" (Habana Gaudi).
+func ClassifyKind(vendorID, class string) (vendor, kind string) {
 	v := strings.ToLower(strings.TrimSpace(vendorID))
 	c := strings.ToLower(strings.TrimSpace(class))
 	switch v {
 	case "0x10de":
 		if strings.HasPrefix(c, "0x03") { // 0x0300 VGA, 0x0302 3D controller
-			return "nvidia"
+			return "nvidia", KindGPU
+		}
+		if strings.HasPrefix(c, "0x0680") { // NVSwitch shows up as "bridge, other"
+			return "nvidia", KindNVSwitch
 		}
 	case "0x1002":
 		if strings.HasPrefix(c, "0x03") || strings.HasPrefix(c, "0x12") {
-			return "amd"
+			return "amd", KindGPU
 		}
 	case "0x8086":
 		if strings.HasPrefix(c, "0x0380") || strings.HasPrefix(c, "0x12") {
-			return "intel"
+			return "intel", KindGPU
 		}
 	case "0x1da3":
-		return "habana"
+		return "habana", KindNPU
 	}
-	return ""
+	return "", ""
 }
 
 // Scan walks <sys>/bus/pci/devices and returns the accelerators found,
@@ -59,12 +78,13 @@ func Scan(sys string) ([]Device, error) {
 		p := filepath.Join(dir, e.Name())
 		vendor := readTrim(filepath.Join(p, "vendor"))
 		class := readTrim(filepath.Join(p, "class"))
-		kind := Classify(vendor, class)
-		if kind == "" {
+		vname, kind := ClassifyKind(vendor, class)
+		if vname == "" {
 			continue
 		}
 		d := Device{
-			Vendor:       kind,
+			Vendor:       vname,
+			Kind:         kind,
 			PCIAddr:      e.Name(),
 			VendorID:     strings.ToLower(vendor),
 			DeviceID:     strings.ToLower(readTrim(filepath.Join(p, "device"))),

@@ -17,6 +17,7 @@ func collectHost(r Root, f *Facts) {
 		f.warnf("no DMI data under %s", dmi)
 	}
 
+	collectDistro(r, f)
 	h.Virt, h.Cloud = classifyDMI(vendor, product, biosVendor, assetTag, f.CPU.Flags["hypervisor"])
 
 	// Container signals. /.dockerenv sits next to the root's etc directory.
@@ -85,4 +86,38 @@ func containerEnv(path string) string {
 		}
 	}
 	return ""
+}
+
+// collectDistro reads ID and VERSION_ID from <Etc>/os-release, falling back to
+// <root>/usr/lib/os-release (the root directory is the parent of Etc).
+func collectDistro(r Root, f *Facts) {
+	for _, p := range []string{
+		filepath.Join(r.Etc, "os-release"),
+		filepath.Join(filepath.Dir(r.Etc), "usr/lib/os-release"),
+	} {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		f.Host.Distro = parseOSRelease(string(b))
+		return
+	}
+}
+
+func parseOSRelease(s string) Distro {
+	var d Distro
+	for _, line := range strings.Split(s, "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		v = strings.Trim(strings.TrimSpace(v), `"'`)
+		switch k {
+		case "ID":
+			d.ID = strings.ToLower(v)
+		case "VERSION_ID":
+			d.VersionID = v
+		}
+	}
+	return d
 }

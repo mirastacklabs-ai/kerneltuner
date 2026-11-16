@@ -255,3 +255,42 @@ rates:  { TcpExt.ListenOverflows: 3.2 } # injected per-second rates
 - `--yes` is required unless `--dry-run` is given.
 - `rollback` restores values and files exactly, including deleting files that did not exist before.
 - Without `--root` it refuses unless it is running as root (uid 0).
+
+## Engine amendments (engine fix pass)
+Backward compatible additions; every existing rule and golden test is unchanged. Rule-author guidance is in `rules/README.md`.
+
+### Facts
+- `Host.Distro{ID, VersionID}` from `<Etc>/os-release`, else `<root>/usr/lib/os-release` (root = parent of `Etc`).
+- `CPU.Vulnerabilities map[string]string` from `<Sys>/devices/system/cpu/vulnerabilities/*`; `CPU.IDs []int` from the `cpuN` directories.
+- `Facts.Swaps []Swap{Path, Type, SizeKB, Priority, Zram}` from `/proc/swaps`; `Zram` is true for `/dev/zram*`. A missing file is silent.
+- `SysctlDirs` gains `fs/inotify` and `net/bridge` (so `Facts.Sysctl` holds `fs.inotify.*` and `net.bridge.*`).
+- `Facts.NICs` also holds netdevs found only under `<Sys>/class/infiniband/*/device/net/*` (RoCE), non-virtual.
+- `Proc.Container` and `workload.App.Container`: runtime (`docker`, `containerd`, `crio`, `podman`, `""`) from the cgroup path. `App.Unit` is still only from a `.service`. `App.NoFileSoftMax` is the maximum soft nofile across PIDs (`NoFileSoft` stays the minimum).
+- `Accelerator.Kind`: `gpu` (default), `nvswitch` (NVIDIA class 0x0680) or `npu` (Habana). `accel.Classify` returns the vendor (so 0x0680 is now `nvidia`); `accel.ClassifyKind` also returns the kind.
+- The "cannot scan PCI devices" warning is emitted only for real read errors, not when the sysfs PCI dir is absent.
+
+### Expression environment
+- `pow2ceil`, `clamp` and `bytes` take ints or floats and return an int when all arguments are ints (else float64). The builtin `max`/`min` already accept both. `accelCount(vendor)` excludes NVSwitch; `accelKindCount(vendor, kind)`; `cmdlineHas(key, item)`; `appContainer(app)`.
+- Integers are never formatted through float64: a proposed int, integral float or numeric string prints exactly (`9223372036854775807`), and ok/recommend comparison of integer fields uses arbitrary-precision ints. A float at or above 2^53 equal to the float64 of the live integer prints the live digits (a rule returning `current`).
+
+### Rule schema additions
+- `foreach: cpu`: items are CPU ids, `item` is the int id, `{item}` is `cpuN`.
+- `foreach_summary: true`: results identical apart from the item (status, current, proposed, advice, evidence, score) collapse into one recommendation; Target `cpu0-63 (64)` (`cpu0-3,8 (5)` with gaps, `a,b (2)` for non-cpu names) and `Recommendation.Targets` lists every item. A group of one keeps its plain Target. `apply` writes every item in `Targets` (absent paths are dropped, none present means skipped); `generate --format tuned` writes every item.
+- `detect` is optional on `runtime` and `service`: true means `recommend`, false `ok`. Without `detect` the behaviour is unchanged.
+- `require_evidence: true` (needs at least one `evidence` entry): `recommend` and `firing` need at least one evidence hit, else the status is `ok`. Applies to every kind. Default unchanged (evidence only affects the score).
+- `kind: cmdline`: a value containing a comma (current or proposed) is compared as a set; the rule is ok when every proposed item is present in the current value.
+- `kind: service` running test: comm equal to the unit name, or comm (15 characters, the kernel truncation) a prefix of it, or argv[0] basename, or the systemd unit name.
+
+### Duplicate reconciliation (`advisor.Reconcile`)
+Recommendations with status `recommend` or `firing`, kinds `sysctl`, `sysfs`, `limit`, `nic`, `cmdline`, and the same `(kind, upper(param), target)` are one setting. `Recommendation` gains `Compare`, `Targets`, `Contributors` and `Note`. `scan` and JSON output keep every recommendation. `render.Generate` and `apply.BuildPlan` call `Reconcile` first:
+- all `gte`: the per-field max of the proposals (`infinity` ranks highest); all `lte`: the min. Integers compare exactly.
+- `eq`, `set`, mixed modes, or non-numeric proposals with different values: the highest-scored recommendation wins (ties: the earlier one) and the conflict is a warning: a `# CONFLICT ...` comment in generated files, a stderr warning from `generate`, `Plan.Warnings` from `apply`.
+- The merged recommendation keeps the first member's position and the highest-scored one's fields, `Contributors` lists every rule id (the generated comment shows them all) and `Sources` is the union. `apply` ops carry `Rules`.
+- The text report (`render.Text`) adds `conflicts: N setting(s) have disagreeing proposals` plus one indented line per setting whenever proposals differ (`advisor.Conflicts`).
+
+### CLI
+- Hidden `--fixture NAME` on `scan`, `generate` and `apply`: materializes `testdata/fixtures/NAME` to a temp dir (removed on exit), uses it as the root and merges the fixture's `values`/`rates` into the sampled metrics.
+- `capture` also records `etc/os-release` (ID and VERSION_ID only), `proc/swaps` and the CPU vulnerabilities.
+
+### Golden tests
+`advisor.RunGolden` materializes and collects each fixture once per call (cache keyed by fixture name, loaded in parallel, removed in parallel); `rules.ValidateWith` parses each fixture once. The whole `rules` package test went from about 35s to about 11s under load.
