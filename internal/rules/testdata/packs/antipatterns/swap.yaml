@@ -1,0 +1,12 @@
+- id: anti.swap-on-nvme
+  title: Swap on busy host
+  kind: antipattern
+  domain: memory
+  detect: "facts.Memory.SwapTotalBytes > 0"
+  risk: medium
+  rationale: Example.
+  advice: Disable swap.
+  sources: [https://docs.kernel.org/networking/ip-sysctl.html]
+  tests:
+    - fixture: f1
+      expect: { status: ok }

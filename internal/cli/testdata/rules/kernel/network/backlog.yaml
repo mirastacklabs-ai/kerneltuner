@@ -1,0 +1,27 @@
+- id: test.somaxconn
+  title: Listen backlog cap
+  kind: sysctl
+  param: net.core.somaxconn
+  domain: network
+  recommend: "8192"
+  compare: gte
+  namespaced: true
+  risk: medium
+  rationale: Small backlog drops connections. Second sentence.
+  sources: [https://docs.kernel.org/networking/ip-sysctl.html]
+  tests:
+    - fixture: minimal
+      expect: { status: recommend, proposed: "8192" }
+
+- id: test.runtime
+  title: Runtime hint
+  kind: runtime
+  param: general
+  domain: network
+  advice: Use SO_REUSEPORT.
+  risk: low
+  rationale: Spread accepts.
+  sources: [https://docs.kernel.org/networking/ip-sysctl.html]
+  tests:
+    - fixture: minimal
+      expect: { status: recommend }

@@ -1,0 +1,155 @@
+package rules
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"path"
+	"sort"
+
+	"gopkg.in/yaml.v3"
+)
+
+// rootAreas are the top-level directories that hold rule packs.
+var rootAreas = []string{"kernel", "ai", "apps", "antipatterns"}
+
+// Load reads all packs from fsys (embedded FS or --rules-dir overlay).
+//
+// Every *.yaml below kernel/, ai/, apps/ and antipatterns/ is a list of
+// rules, except sources.yaml (a list of Source). ecosystem/tuned.yaml and
+// ecosystem/bpftune.yaml are parsed into Ecosystem; either may be missing or
+// empty. YAML is strict: unknown fields are an error.
+func Load(fsys fs.FS) ([]Rule, Ecosystem, []Source, error) {
+	var (
+		rs   []Rule
+		srcs []Source
+	)
+	for _, area := range rootAreas {
+		if _, err := fs.Stat(fsys, area); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, Ecosystem{}, nil, err
+		}
+		err := fs.WalkDir(fsys, area, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || path.Ext(p) != ".yaml" {
+				return nil
+			}
+			b, err := fs.ReadFile(fsys, p)
+			if err != nil {
+				return err
+			}
+			if path.Base(p) == "sources.yaml" {
+				var s []Source
+				if err := decodeStrict(b, &s); err != nil {
+					return fmt.Errorf("%s: %w", p, err)
+				}
+				srcs = append(srcs, s...)
+				return nil
+			}
+			var list []Rule
+			if err := decodeStrict(b, &list); err != nil {
+				return fmt.Errorf("%s: %w", p, err)
+			}
+			for i := range list {
+				list[i].Pack = path.Dir(p)
+			}
+			rs = append(rs, list...)
+			return nil
+		})
+		if err != nil {
+			return nil, Ecosystem{}, nil, err
+		}
+	}
+	eco, err := loadEcosystem(fsys)
+	if err != nil {
+		return nil, Ecosystem{}, nil, err
+	}
+	return rs, eco, srcs, nil
+}
+
+// decodeStrict unmarshals YAML rejecting unknown fields. Empty input is fine.
+func decodeStrict(b []byte, out any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	if err := dec.Decode(out); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
+
+type tunedFile struct {
+	Profiles map[string]struct {
+		Include string            `yaml:"include"`
+		Sysctl  map[string]string `yaml:"sysctl"`
+	} `yaml:"profiles"`
+}
+
+type bpftuneFile struct {
+	Sysctls []string `yaml:"sysctls"`
+}
+
+func loadEcosystem(fsys fs.FS) (Ecosystem, error) {
+	var eco Ecosystem
+	if b, err := fs.ReadFile(fsys, "ecosystem/tuned.yaml"); err == nil {
+		var tf tunedFile
+		if err := decodeStrict(b, &tf); err != nil {
+			return eco, fmt.Errorf("ecosystem/tuned.yaml: %w", err)
+		}
+		eco.Tuned = map[string]TunedProfile{}
+		for name := range tf.Profiles {
+			sysctl, err := resolveTuned(name, tf, nil)
+			if err != nil {
+				return eco, fmt.Errorf("ecosystem/tuned.yaml: %w", err)
+			}
+			eco.Tuned[name] = TunedProfile{Sysctl: sysctl}
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return eco, err
+	}
+	if b, err := fs.ReadFile(fsys, "ecosystem/bpftune.yaml"); err == nil {
+		var bf bpftuneFile
+		if err := decodeStrict(b, &bf); err != nil {
+			return eco, fmt.Errorf("ecosystem/bpftune.yaml: %w", err)
+		}
+		eco.Bpftune = append([]string(nil), bf.Sysctls...)
+		sort.Strings(eco.Bpftune)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return eco, err
+	}
+	return eco, nil
+}
+
+// resolveTuned flattens a profile's include chain; the child wins. An
+// include naming an unknown profile (a stock tuned profile we do not model)
+// ends the chain.
+func resolveTuned(name string, tf tunedFile, chain []string) (map[string]string, error) {
+	for _, c := range chain {
+		if c == name {
+			return nil, fmt.Errorf("tuned profile include cycle: %v -> %s", chain, name)
+		}
+	}
+	p, ok := tf.Profiles[name]
+	if !ok {
+		return map[string]string{}, nil
+	}
+	out := map[string]string{}
+	if p.Include != "" {
+		parent, err := resolveTuned(p.Include, tf, append(chain, name))
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range parent {
+			out[k] = v
+		}
+	}
+	for k, v := range p.Sysctl {
+		out[k] = v
+	}
+	return out, nil
+}

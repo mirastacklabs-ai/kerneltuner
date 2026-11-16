@@ -1,0 +1,5 @@
+description: Synthetic host with the default listen backlog
+synthetic: true
+files:
+  proc/sys/kernel/osrelease: "6.8.0-31-generic\n"
+  proc/sys/net/core/somaxconn: "128\n"

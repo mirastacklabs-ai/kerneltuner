@@ -1,10 +1,5 @@
 package rules
 
-import (
-	"errors"
-	"io/fs"
-)
-
 // Rule is one entry of a pack YAML file. See docs/DESIGN.md "Schema".
 type Rule struct {
 	ID         string     `yaml:"id"`
@@ -77,14 +72,4 @@ type TunedProfile struct {
 type Ecosystem struct {
 	Tuned   map[string]TunedProfile // profile name -> sysctls (tuned.yaml)
 	Bpftune []string                // sysctls bpftune tunes (bpftune.yaml)
-}
-
-// ErrNotImplemented is returned by stubs until the loader lands.
-var ErrNotImplemented = errors.New("not implemented")
-
-// Load reads all packs from fsys (embedded FS or --rules-dir overlay).
-// Stub.
-func Load(fsys fs.FS) ([]Rule, Ecosystem, []Source, error) {
-	_ = fsys
-	return nil, Ecosystem{}, nil, ErrNotImplemented
 }

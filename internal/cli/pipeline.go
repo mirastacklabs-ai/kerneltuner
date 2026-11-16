@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -38,17 +37,9 @@ func loadPipeline(g *globalOpts) (*pipeline, error) {
 	if p.Workload, err = workload.Detect(p.Root, p.Facts); err != nil {
 		return nil, fmt.Errorf("detect workload: %w", err)
 	}
-	var fsys fs.FS = rulesfs.FS
-	if g.RulesDir != "" {
-		fsys = os.DirFS(g.RulesDir)
-	}
-	all, eco, srcs, err := rules.Load(fsys)
-	switch {
-	case errors.Is(err, rules.ErrNotImplemented):
-		// Loader not written yet: carry on with no rules.
-		p.Facts.Warnings = append(p.Facts.Warnings, "rules loader not implemented")
-	case err != nil:
-		return nil, fmt.Errorf("load rules: %w", err)
+	all, eco, srcs, err := loadRules(g)
+	if err != nil {
+		return nil, err
 	}
 	p.Eco, p.Sources = eco, srcs
 	for _, r := range all {
@@ -61,6 +52,20 @@ func loadPipeline(g *globalOpts) (*pipeline, error) {
 		p.Rules = append(p.Rules, r)
 	}
 	return p, nil
+}
+
+// loadRules loads every rule pack: the embedded ones, or --rules-dir when set.
+// It applies no --domain/--pack filtering.
+func loadRules(g *globalOpts) ([]rules.Rule, rules.Ecosystem, []rules.Source, error) {
+	var fsys fs.FS = rulesfs.FS
+	if g.RulesDir != "" {
+		fsys = os.DirFS(g.RulesDir)
+	}
+	rs, eco, srcs, err := rules.Load(fsys)
+	if err != nil {
+		return nil, eco, nil, fmt.Errorf("load rules: %w", err)
+	}
+	return rs, eco, srcs, nil
 }
 
 // sample reads metrics once (d <= 0: values only, no rates) or twice, d apart.

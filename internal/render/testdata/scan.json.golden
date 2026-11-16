@@ -1,0 +1,299 @@
+{
+  "version": "v0.0.0-test",
+  "kernel": "6.8.0-31-generic",
+  "warnings": [
+    "could not read /proc/net/netstat"
+  ],
+  "recommendations": [
+    {
+      "rule_id": "net.core.somaxconn",
+      "kind": "sysctl",
+      "domain": "network",
+      "param": "net.core.somaxconn",
+      "target": "",
+      "title": "Listen backlog cap",
+      "current": "128",
+      "proposed": "4096",
+      "status": "recommend",
+      "risk": "low",
+      "reboot": false,
+      "score": 5,
+      "evidence": [
+        {
+          "metric": "TcpExt.ListenOverflows",
+          "value": 3.2,
+          "threshold": 0
+        }
+      ],
+      "managed_by": "",
+      "rationale": "Small backlog drops connections. Raised to 4096 in kernel 5.4.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "net.ipv4.tcp_rmem",
+      "kind": "sysctl",
+      "domain": "network",
+      "param": "net.ipv4.tcp_rmem",
+      "target": "",
+      "title": "TCP receive buffer",
+      "current": "4096 131072 6291456",
+      "proposed": "4096 131072 16777216",
+      "status": "recommend",
+      "risk": "medium",
+      "reboot": false,
+      "score": 0.7,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "Long fat pipes need larger buffers.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "limits.nofile",
+      "kind": "limit",
+      "domain": "limits",
+      "param": "LimitNOFILE",
+      "target": "nginx.service",
+      "title": "Open files for nginx",
+      "current": "1024",
+      "proposed": "65536",
+      "status": "recommend",
+      "risk": "low",
+      "reboot": false,
+      "score": 1,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "Default is too low.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "limits.memlock",
+      "kind": "limit",
+      "domain": "limits",
+      "param": "LimitMEMLOCK",
+      "target": "vllm",
+      "title": "Locked memory for vllm",
+      "current": "65536",
+      "proposed": "infinity",
+      "status": "recommend",
+      "risk": "low",
+      "reboot": false,
+      "score": 1,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "Pinned buffers.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "storage.scheduler",
+      "kind": "sysfs",
+      "domain": "storage",
+      "param": "/sys/block/{item}/queue/scheduler",
+      "target": "nvme0n1",
+      "title": "NVMe scheduler",
+      "current": "mq-deadline",
+      "proposed": "none",
+      "status": "recommend",
+      "risk": "low",
+      "reboot": false,
+      "score": 1,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "NVMe has its own queues.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "cmdline.iommu",
+      "kind": "cmdline",
+      "domain": "ai",
+      "param": "iommu",
+      "target": "",
+      "title": "IOMMU passthrough",
+      "current": "",
+      "proposed": "pt",
+      "status": "recommend",
+      "risk": "medium",
+      "reboot": true,
+      "score": 0.7,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "Lower DMA overhead.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "cmdline.nosmt",
+      "kind": "cmdline",
+      "domain": "ai",
+      "param": "nohz_full",
+      "target": "",
+      "title": "Tickless cores",
+      "current": "",
+      "proposed": "",
+      "status": "recommend",
+      "risk": "high",
+      "reboot": true,
+      "score": 0.4,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "Fewer interrupts.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "nic.ring",
+      "kind": "nic",
+      "domain": "network",
+      "param": "rx_ring",
+      "target": "eth0",
+      "title": "RX ring",
+      "current": "256",
+      "proposed": "4096",
+      "status": "recommend",
+      "risk": "low",
+      "reboot": false,
+      "score": 1,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "Absorb bursts.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "nic.txring",
+      "kind": "nic",
+      "domain": "network",
+      "param": "tx_ring",
+      "target": "eth0",
+      "title": "TX ring",
+      "current": "256",
+      "proposed": "2048",
+      "status": "recommend",
+      "risk": "low",
+      "reboot": false,
+      "score": 1,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "Absorb bursts.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "nic.channels",
+      "kind": "nic",
+      "domain": "network",
+      "param": "combined",
+      "target": "eth0",
+      "title": "Channels",
+      "current": "4",
+      "proposed": "32",
+      "status": "recommend",
+      "risk": "low",
+      "reboot": false,
+      "score": 1,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "One per core.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "rt.vllm",
+      "kind": "runtime",
+      "domain": "ai",
+      "param": "",
+      "target": "vllm",
+      "title": "vLLM batch size",
+      "current": "",
+      "proposed": "",
+      "status": "recommend",
+      "risk": "low",
+      "reboot": false,
+      "score": 1,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "Throughput.",
+      "advice": "Set --max-num-seqs to 256.",
+      "verify": "Watch tokens/s",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "anti.thp",
+      "kind": "antipattern",
+      "domain": "memory",
+      "param": "",
+      "target": "",
+      "title": "THP always on database host",
+      "current": "",
+      "proposed": "",
+      "status": "firing",
+      "risk": "medium",
+      "reboot": false,
+      "score": 1.05,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "THP stalls latency-sensitive databases. Use madvise.",
+      "advice": "",
+      "verify": "",
+      "sources": [
+        "https://docs.kernel.org/networking/ip-sysctl.html"
+      ]
+    },
+    {
+      "rule_id": "broken",
+      "kind": "sysctl",
+      "domain": "cpu",
+      "param": "",
+      "target": "",
+      "title": "Broken rule",
+      "current": "",
+      "proposed": "",
+      "status": "error",
+      "risk": "low",
+      "reboot": false,
+      "score": 0,
+      "evidence": [],
+      "managed_by": "",
+      "rationale": "",
+      "advice": "error: recommend: boom",
+      "verify": "",
+      "sources": []
+    }
+  ]
+}

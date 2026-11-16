@@ -1,0 +1,8 @@
+- url: https://docs.kernel.org/networking/ip-sysctl.html
+  project: linux
+  covers: ip sysctl
+  last_reviewed: "2026-01-01"
+- url: https://example.com/unused
+  project: example
+  covers: nothing
+  last_reviewed: "2026-01-01"
