@@ -61,3 +61,5 @@ release-snapshot: ## Build a local snapshot release into dist/ (no publish)
 .PHONY: e2e
 e2e: ## End-to-end tests (docker only; see test/e2e/run.sh)
 	sh test/e2e/run.sh
+test-nonroot: ## Run tests as an unprivileged uid (mirrors CI runners)
+	docker run --rm --user 1001:1001 -v $(CURDIR):$(WORKDIR) -v $(CACHE_VOL):/go -w $(WORKDIR) -e GOCACHE=/tmp/gc -e GOMODCACHE=/go/pkg/mod $(GO_IMAGE) go test -race -count=1 ./...

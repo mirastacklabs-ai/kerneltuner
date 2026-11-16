@@ -296,6 +296,14 @@ func listDirBeneath(base, dir string) ([]os.DirEntry, error) {
 // not group- or world-writable. A base that does not exist yet is accepted:
 // root creates it, and its parent has been checked. dir is the --root value.
 func CheckRoot(dir string, root facts.Root) error {
+	// Pass 1: structure. Every component must be a real directory (no
+	// symlinks); this is checked for all of them before ownership so the
+	// refusal names the most specific problem regardless of who runs it.
+	type seen struct {
+		path string
+		meta fileMeta
+	}
+	var dirs []seen
 	for _, d := range []string{dir, root.Proc, root.Sys, root.Etc, root.Var} {
 		fd, err := unix.Open(d, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
@@ -313,7 +321,11 @@ func CheckRoot(dir string, root facts.Root) error {
 		if err != nil {
 			return fmt.Errorf("refusing --root: %s: %w", facts.SafeText(d), err)
 		}
-		if err := trusted(d, fileMeta{Mode: st.Mode & 0o7777, UID: st.Uid}); err != nil {
+		dirs = append(dirs, seen{d, fileMeta{Mode: st.Mode & 0o7777, UID: st.Uid}})
+	}
+	// Pass 2: trust. Owned by root, not group/world-writable.
+	for _, s := range dirs {
+		if err := trusted(s.path, s.meta); err != nil {
 			return fmt.Errorf("refusing --root: %w", err)
 		}
 	}
