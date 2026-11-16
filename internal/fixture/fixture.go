@@ -4,8 +4,10 @@ package fixture
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -127,6 +129,20 @@ func checkLink(rel, target string) error {
 	if filepath.IsAbs(target) || strings.HasPrefix(target, "/") {
 		return fmt.Errorf("fixture: symlink %q has absolute target %q", rel, target)
 	}
+	// A ".." after a real element ("a/b/../x") is resolved by the kernel
+	// through whatever the earlier elements link to, not lexically, so the
+	// check below would be wrong. Only leading ".." (pure ascent) is allowed.
+	seen := false
+	for _, c := range strings.Split(target, "/") {
+		switch {
+		case c == "..":
+			if seen {
+				return fmt.Errorf("fixture: symlink %q target %q has a \"..\" component after a path element", rel, target)
+			}
+		case c != "" && c != ".":
+			seen = true
+		}
+	}
 	res := filepath.Join(filepath.Dir(rel), target)
 	if res == ".." || strings.HasPrefix(res, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("fixture: symlink %q target %q escapes the fixture root", rel, target)
@@ -200,12 +216,22 @@ func MaterializeSpec(dir string, s *Spec) (facts.Root, map[string]float64, map[s
 			return fail(err)
 		}
 	}
-	for rel, target := range links {
+	rels := make([]string, 0, len(links))
+	for rel := range links {
+		rels = append(rels, rel)
+	}
+	sort.Strings(rels)
+	for _, rel := range rels {
 		if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 			return fail(err)
 		}
-		if err := root.Symlink(target, rel); err != nil {
+		if err := root.Symlink(links[rel], rel); err != nil {
 			return fail(err)
+		}
+		// Resolve the new link through the os.Root: a chain of links that
+		// escapes the root fails here. A dangling link is fine.
+		if _, err := root.Stat(rel); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fail(fmt.Errorf("fixture: symlink %q escapes the fixture root: %w", rel, err))
 		}
 	}
 	values, rates := s.Values, s.Rates
