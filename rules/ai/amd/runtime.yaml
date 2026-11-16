@@ -1,0 +1,52 @@
+- id: ai.amd.acs_disable
+  title: Disable PCIe ACS for multi-node RCCL
+  kind: runtime
+  param: acs
+  domain: ai
+  applies:
+    when: 'accelCount("amd") > 0 and len(facts.RDMA) > 0 and facts.Host.Virt == "none" and not facts.Host.Container'
+  risk: medium
+  rationale: >-
+    PCIe ACS routes peer-to-peer traffic through the root complex; for GPU RDMA this adds latency to every
+    NIC-GPU transfer, and AMD lists ACS-enabled bare metal as a cause of low RCCL/ib_write_bw performance.
+    kerneltuner cannot read ACS state from /sys, so this is advice only. Disabling ACS weakens PCIe device
+    isolation.
+  advice: >-
+    Check with: sudo lspci -vvv | grep -i acsctl. If any device shows SrcValid+, disable ACS on every device
+    that supports it using AMD's disable_acs.sh script (in the AMD workload-optimization guide) or via BIOS.
+    The script change is not persistent across reboot unless run at boot. Only needed for multi-node RCCL.
+  verify: "lspci -vvv | grep -i acsctl shows no SrcValid+"
+  sources:
+    - https://rocm.docs.amd.com/en/docs-7.0.0/how-to/rocm-for-ai/inference-optimization/workload.html
+    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+  tests:
+    - fixture: gpu-8xmi300x
+      expect: { status: recommend }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+    - fixture: colima-vm
+      expect: { status: not-applicable }
+
+- id: ai.amd.sglang_container_shm
+  title: SGLang on AMD container flags
+  kind: runtime
+  param: docker
+  domain: ai
+  applies:
+    when: 'accelCount("amd") > 0 and hasApp("sglang") and not facts.Host.Container'
+  risk: low
+  rationale: >-
+    The SGLang AMD guide runs its ROCm containers with --ipc=host --shm-size 16g (multi-process tensor
+    parallelism exchanges tensors through shared memory, and Docker's default /dev/shm is only 64 MB).
+    Only relevant if SGLang runs in a container.
+  advice: >-
+    If SGLang runs in Docker, start the container with --ipc=host --shm-size 16g (values from the SGLang AMD
+    guide; size to your model and TP degree).
+  verify: "df -h /dev/shm inside the container shows the larger size, or --ipc=host is set"
+  sources:
+    - https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+  tests:
+    - fixture: gpu-8xmi300x
+      expect: { status: recommend }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }

@@ -1,0 +1,10 @@
+description: "gpu-8xmi300x with two RoCE netdevs visible in /sys/class/net: one at MTU 1500, one at 9000"
+synthetic: true
+extends: gpu-8xmi300x
+files:
+  "sys/class/net/ens10f0np0/device/vendor": "0x15b3\n"
+  "sys/class/net/ens10f0np0/mtu": "1500\n"
+  "sys/class/net/ens10f0np0/speed": "400000\n"
+  "sys/class/net/ens11f0np0/device/vendor": "0x15b3\n"
+  "sys/class/net/ens11f0np0/mtu": "9000\n"
+  "sys/class/net/ens11f0np0/speed": "400000\n"

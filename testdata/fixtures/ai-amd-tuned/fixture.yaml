@@ -1,0 +1,12 @@
+description: "gpu-8xmi300x after AMD host tuning: iommu=pt, amd_iommu=on, pci=realloc=off, numa_balancing=0, RoCE MTU 9000"
+synthetic: true
+extends: gpu-8xmi300x
+files:
+  "proc/cmdline": "BOOT_IMAGE=/boot/vmlinuz-6.8.0-45-generic root=/dev/nvme0n1p2 ro amd_iommu=on iommu=pt pci=realloc=off quiet splash\n"
+  "proc/sys/kernel/numa_balancing": "0\n"
+  "sys/class/net/ens10f0np0/device/vendor": "0x15b3\n"
+  "sys/class/net/ens10f0np0/mtu": "9000\n"
+  "sys/class/net/ens10f0np0/speed": "400000\n"
+  "sys/class/net/ens11f0np0/device/vendor": "0x15b3\n"
+  "sys/class/net/ens11f0np0/mtu": "9000\n"
+  "sys/class/net/ens11f0np0/speed": "400000\n"

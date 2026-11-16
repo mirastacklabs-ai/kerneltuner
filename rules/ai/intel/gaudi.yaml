@@ -1,0 +1,114 @@
+- id: ai.intel.gaudi_iommu_pt
+  title: IOMMU passthrough for Gaudi on Ubuntu kernel 6.8
+  kind: cmdline
+  param: iommu
+  domain: ai
+  applies:
+    kernel: ">=6.8 <6.9"
+    when: 'accelCount("habana") > 0 and facts.Kernel.Release endsWith "-generic"'
+  recommend: '"pt"'
+  compare: eq
+  reboot: true
+  risk: medium
+  rationale: >-
+    Intel says IOMMU passthrough is required only on Ubuntu 24.04.2 / 22.04.5 with Linux kernel 6.8, and skips
+    it for other OS or kernel versions. kerneltuner has no distro fact, so this rule approximates Ubuntu as a
+    6.8 kernel whose release string ends in -generic; verify your OS before applying. Passthrough trades some
+    DMA isolation for untranslated device DMA.
+  advice: >-
+    Set GRUB_CMDLINE_LINUX_DEFAULT="iommu=pt intel_iommu=on" in /etc/default/grub, run update-grub, reboot.
+  verify: "/proc/cmdline contains iommu=pt"
+  sources:
+    - https://docs.habana.ai/en/latest/Installation_Guide/Bare_Metal_Fresh_OS.html
+  tests:
+    - fixture: gaudi3-8x
+      expect: { status: recommend, proposed: pt }
+    - fixture: ai-intel-gaudi3-tuned
+      expect: { status: ok }
+    - fixture: ai-intel-gaudi3-rhel
+      expect: { status: not-applicable }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+
+- id: ai.intel.gaudi_intel_iommu_on
+  title: intel_iommu=on for Gaudi on Ubuntu kernel 6.8
+  kind: cmdline
+  param: intel_iommu
+  domain: ai
+  applies:
+    kernel: ">=6.8 <6.9"
+    when: 'accelCount("habana") > 0 and facts.Kernel.Release endsWith "-generic" and facts.CPU.Vendor == "GenuineIntel"'
+  recommend: '"on"'
+  compare: eq
+  reboot: true
+  risk: medium
+  rationale: >-
+    Part of Intel's Gaudi IOMMU-passthrough recipe (iommu=pt intel_iommu=on), required only on Ubuntu
+    24.04.2 / 22.04.5 with kernel 6.8. Same Ubuntu approximation as ai.intel.gaudi_iommu_pt; limited to Intel
+    CPUs since the option is meaningless elsewhere.
+  advice: >-
+    Set GRUB_CMDLINE_LINUX_DEFAULT="iommu=pt intel_iommu=on" in /etc/default/grub, run update-grub, reboot.
+  verify: "/proc/cmdline contains intel_iommu=on"
+  sources:
+    - https://docs.habana.ai/en/latest/Installation_Guide/Bare_Metal_Fresh_OS.html
+  tests:
+    - fixture: gaudi3-8x
+      expect: { status: ok }
+    - fixture: ai-intel-gaudi3-rhel
+      expect: { status: not-applicable }
+    - fixture: intel-max-1550
+      expect: { status: not-applicable }
+
+- id: ai.intel.gaudi_governor
+  title: CPU governor not performance on a Gaudi host
+  kind: report
+  param: scaling_governor
+  domain: ai
+  applies:
+    when: 'accelCount("habana") > 0'
+  detect: 'facts.CPU.Governor != "" and facts.CPU.Governor != "performance"'
+  risk: low
+  rationale: >-
+    Intel's Gaudi setup guide sets the CPU frequency governor to performance on the bare-metal host (before
+    starting containers) so host-side launch and data-feeding work is not throttled by frequency scaling. It
+    needs BIOS support for ACPI cpufreq. Cost: higher idle power. Reported rather than applied because the
+    setting is per-CPU and the Gaudi guide does not number the gain.
+  advice: >-
+    echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor (not persistent across
+    reboot; use cpupower, tuned or a boot unit to keep it). Do this on the host before starting containers.
+  verify: "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor prints performance"
+  sources:
+    - https://docs.habana.ai/en/latest/Installation_Guide/Bare_Metal_Fresh_OS.html
+  tests:
+    - fixture: gaudi3-8x
+      expect: { status: firing }
+    - fixture: ai-intel-gaudi3-tuned
+      expect: { status: ok }
+    - fixture: intel-max-1550
+      expect: { status: not-applicable }
+
+- id: ai.intel.gaudi_docker_flags
+  title: Gaudi container runtime flags
+  kind: runtime
+  param: docker
+  domain: ai
+  applies:
+    when: 'accelCount("habana") > 0 and not facts.Host.Container'
+  risk: low
+  rationale: >-
+    Intel's Docker guide runs Gaudi containers with --runtime=habana --cap-add=sys_nice --net=host --ipc=host,
+    and says --ipc=host is required for distributed training over the Habana Collective Communication Library.
+    Huge pages and memlock are set by habanalabs-installer, so no numeric rule is given for them.
+  advice: >-
+    docker run --runtime=habana -e HABANA_VISIBLE_DEVICES=all --cap-add=sys_nice --net=host --ipc=host ...
+    (flags from the Gaudi Docker guide).
+  verify: "docker inspect shows Runtime=habana, IpcMode=host and CapAdd sys_nice"
+  sources:
+    - https://docs.habana.ai/en/latest/Installation_Guide/Additional_Installation/Docker_Installation.html
+  tests:
+    - fixture: gaudi3-8x
+      expect: { status: recommend }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+    - fixture: container-k8s-redis
+      expect: { status: not-applicable }

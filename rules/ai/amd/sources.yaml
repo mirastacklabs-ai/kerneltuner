@@ -1,0 +1,20 @@
+- url: https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
+  project: AMD ROCm / Instinct
+  covers: MI300X acceptance guide; required kernel cmdline (pci=realloc=off, amd_iommu=on|intel_iommu=on, iommu=pt)
+  last_reviewed: "2026-11-16"
+- url: https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+  project: SGLang
+  covers: SGLang on AMD GPUs; host cmdline pci=realloc=off iommu=pt, numa_balancing off, container --ipc=host --shm-size
+  last_reviewed: "2026-11-16"
+- url: https://rocm.docs.amd.com/en/docs-7.0.0/how-to/rocm-for-ai/inference-optimization/workload.html
+  project: AMD ROCm
+  covers: disable NUMA auto-balancing; disable ACS for multi-node RCCL
+  last_reviewed: "2026-11-16"
+- url: https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+  project: AMD Instinct cluster networking
+  covers: memlock/nofile limits for RCCL, MTU 9000, ACS on bare metal, numa_balancing persistence
+  last_reviewed: "2026-11-16"
+- url: https://docs.kernel.org/admin-guide/sysctl/kernel.html
+  project: Linux kernel
+  covers: kernel.numa_balancing sysctl
+  last_reviewed: "2026-11-16"

@@ -1,0 +1,6 @@
+description: "gaudi3-8x after host tuning: governor performance, iommu=pt intel_iommu=on"
+synthetic: true
+extends: gaudi3-8x
+files:
+  "proc/cmdline": "BOOT_IMAGE=/boot/vmlinuz-6.8.0-45-generic root=/dev/nvme0n1p2 ro iommu=pt intel_iommu=on quiet\n"
+  "sys/devices/system/cpu/cpu0/cpufreq/scaling_governor": "performance\n"
