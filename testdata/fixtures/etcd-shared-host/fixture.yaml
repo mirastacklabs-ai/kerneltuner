@@ -1,0 +1,12 @@
+description: "Stacked control plane: etcd and kubelet share the host"
+synthetic: true
+extends: etcd-dedicated
+files:
+  "proc/3100/cgroup": "0::/system.slice/kubelet.service\n"
+  "proc/3100/cmdline": "/usr/bin/kubelet\u0000--config=/var/lib/kubelet/config.yaml\u0000"
+  "proc/3100/comm": "kubelet\n"
+  "proc/3100/fd/0": ""
+  "proc/3100/fd/1": ""
+  "proc/3100/fd/2": ""
+  "proc/3100/fd/3": ""
+  "proc/3100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1048576                1048576                files     \nMax locked memory         8388608              8388608              bytes     \n"

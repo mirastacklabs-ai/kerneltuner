@@ -1,0 +1,8 @@
+- url: https://etcd.io/docs/latest/tuning/
+  project: etcd
+  covers: disk priority with ionice -c2 -n0, fsync latency sensitivity, peer traffic prioritisation with tc
+  last_reviewed: 2026-11-16
+- url: https://etcd.io/docs/latest/op-guide/hardware/
+  project: etcd
+  covers: disk requirements (sequential IOPS), memory and CPU sizing
+  last_reviewed: 2026-11-16

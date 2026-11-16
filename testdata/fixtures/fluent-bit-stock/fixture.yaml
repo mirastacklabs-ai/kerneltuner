@@ -1,0 +1,14 @@
+description: "Fluent Bit tailing logs with stock fs.inotify limits and a 1024 open-files limit"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3500/cgroup": "0::/system.slice/fluent-bit.service\n"
+  "proc/3500/cmdline": "/opt/fluent-bit/bin/fluent-bit\u0000-c\u0000/etc/fluent-bit/fluent-bit.conf\u0000"
+  "proc/3500/comm": "fluent-bit\n"
+  "proc/3500/fd/0": ""
+  "proc/3500/fd/1": ""
+  "proc/3500/fd/2": ""
+  "proc/3500/fd/3": ""
+  "proc/3500/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                1024                files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/sys/fs/inotify/max_user_instances": "128\n"
+  "proc/sys/fs/inotify/max_user_watches": "8192\n"

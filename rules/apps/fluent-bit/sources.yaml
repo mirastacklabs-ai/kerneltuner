@@ -1,0 +1,4 @@
+- url: https://docs.fluentbit.io/manual/data-pipeline/inputs/tail
+  project: fluent-bit
+  covers: fs.inotify.max_user_watches / max_user_instances and LimitNOFILE for tailing many files
+  last_reviewed: 2026-11-16

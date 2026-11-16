@@ -1,0 +1,12 @@
+- url: https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
+  project: containerd
+  covers: shipped systemd unit (modprobe overlay, LimitNPROC/LimitCORE=infinity, OOMScoreAdjust=-999)
+  last_reviewed: 2026-11-16
+- url: https://raw.githubusercontent.com/containerd/containerd/main/docs/ops.md
+  project: containerd
+  covers: operations guide (modprobe overlay in the unit, oom_score)
+  last_reviewed: 2026-11-16
+- url: https://raw.githubusercontent.com/containerd/containerd/main/docs/cri/config.md
+  project: containerd
+  covers: overlayfs as the default snapshotter
+  last_reviewed: 2026-11-16

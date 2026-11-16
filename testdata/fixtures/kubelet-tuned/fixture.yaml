@@ -1,0 +1,6 @@
+description: "kubelet-stock after the Kubernetes prerequisites: ip_forward=1 and swap off"
+synthetic: true
+extends: kubelet-stock
+files:
+  "proc/meminfo": "MemTotal:       16384000 kB\nMemFree:         8192000 kB\nMemAvailable:   12000000 kB\nSwapTotal:      0 kB\nSwapFree:       0 kB\n"
+  "proc/sys/net/ipv4/ip_forward": "1\n"

@@ -1,0 +1,16 @@
+- url: https://kubernetes.io/docs/setup/production-environment/container-runtimes/
+  project: kubernetes
+  covers: net.ipv4.ip_forward=1 prerequisite for container runtimes
+  last_reviewed: 2026-11-16
+- url: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+  project: kubernetes
+  covers: kubelet fails to start with swap by default; failSwapOn and swapBehavior
+  last_reviewed: 2026-11-16
+- url: https://kubernetes.io/docs/concepts/cluster-administration/swap-memory-management/
+  project: kubernetes
+  covers: swap behaviors (NoSwap, LimitedSwap), noswap tmpfs option, swap risks for system daemons
+  last_reviewed: 2026-11-16
+- url: https://kubernetes.io/blog/2023/08/24/swap-linux-beta/
+  project: kubernetes
+  covers: swap support history (alpha 1.22, beta 1.28, NodeSwap feature gate)
+  last_reviewed: 2026-11-16

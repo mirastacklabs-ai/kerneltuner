@@ -1,0 +1,12 @@
+description: "Dedicated etcd member: etcd is the only detected application"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3200/cgroup": "0::/system.slice/etcd.service\n"
+  "proc/3200/cmdline": "/usr/local/bin/etcd\u0000--data-dir=/var/lib/etcd\u0000"
+  "proc/3200/comm": "etcd\n"
+  "proc/3200/fd/0": ""
+  "proc/3200/fd/1": ""
+  "proc/3200/fd/2": ""
+  "proc/3200/fd/3": ""
+  "proc/3200/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1048576                1048576                files     \nMax locked memory         8388608              8388608              bytes     \n"

@@ -1,0 +1,13 @@
+description: "containerd running but the overlay module is not loaded"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3300/cgroup": "0::/system.slice/containerd.service\n"
+  "proc/3300/cmdline": "/usr/local/bin/containerd\u0000"
+  "proc/3300/comm": "containerd\n"
+  "proc/3300/fd/0": ""
+  "proc/3300/fd/1": ""
+  "proc/3300/fd/2": ""
+  "proc/3300/fd/3": ""
+  "proc/3300/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1048576                1048576                files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/modules": "br_netfilter 32768 0 - Live 0x0000000000000000\n"

@@ -1,0 +1,5 @@
+description: "Cilium agent on kernel 4.15 (below the 5.10 minimum)"
+synthetic: true
+extends: cilium-stock
+files:
+  "proc/sys/kernel/osrelease": "4.15.0-213-generic\n"

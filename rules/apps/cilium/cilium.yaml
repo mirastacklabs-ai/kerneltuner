@@ -1,0 +1,25 @@
+- id: app.cilium.min_kernel
+  title: Kernel older than Cilium's minimum
+  kind: report
+  param: kernel
+  domain: network
+  applies:
+    when: "hasApp(\"cilium\") && facts.Kernel.Major > 0"
+  detect: "!kver(\">=5.10\") && !(facts.Kernel.Major == 4 && facts.Kernel.Minor == 18 && facts.Kernel.Release contains \".el8_10.\")"
+  risk: medium
+  rationale: >-
+    The Cilium system requirements list Linux kernel >= 5.10 (or the equivalent, such as 4.18 on RHEL 8.10) for running the cilium/cilium container image, because Cilium builds on the kernel's eBPF functionality and the subsystems that integrate with it; newer kernels unlock additional features that Cilium detects at agent start. The RHEL exception is recognised only for 4.18 kernels with an el8_10 release string. This check does not read the kernel config options (CONFIG_BPF_SYSCALL, CONFIG_BPF_JIT and others) that the page also lists.
+  advice: >-
+    The running kernel ({{.facts.Kernel.Release}}) is below Cilium's documented minimum of 5.10 (or 4.18 on RHEL 8.10). Upgrade the node kernel before running the Cilium agent; see the system requirements page for features that need newer kernels.
+  verify: "uname -r reports >= 5.10 (or a RHEL 8.10 4.18 kernel), and the cilium-agent starts without eBPF feature errors"
+  sources:
+    - https://docs.cilium.io/en/stable/operations/system_requirements/
+  tests:
+    - fixture: cilium-oldkernel
+      expect: { status: firing }
+    - fixture: cilium-stock
+      expect: { status: ok }
+    - fixture: cilium-rhel8
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

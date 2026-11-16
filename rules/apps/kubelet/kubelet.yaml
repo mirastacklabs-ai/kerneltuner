@@ -1,0 +1,49 @@
+- id: app.kubelet.ip_forward
+  title: net.ipv4.ip_forward=1 on a Kubernetes node
+  kind: sysctl
+  param: net.ipv4.ip_forward
+  domain: network
+  applies:
+    when: "hasApp(\"kubelet\")"
+  recommend: "1"
+  compare: eq
+  namespaced: true
+  risk: medium
+  rationale: >-
+    The Kubernetes container-runtime prerequisites state that by default the Linux kernel does not allow IPv4 packets to be routed between interfaces, and give `net.ipv4.ip_forward = 1` (persisted in /etc/sysctl.d/k8s.conf) as the manual setting; most cluster networking implementations set it themselves, but some expect the administrator to. Without it pod traffic cannot be routed through the node. Risk: with forwarding on, the host routes between all its interfaces, so keep host firewall rules in place on nodes that also face untrusted networks.
+  verify: "sysctl net.ipv4.ip_forward prints 1"
+  sources:
+    - https://kubernetes.io/docs/setup/production-environment/container-runtimes/
+  tests:
+    - fixture: kubelet-stock
+      expect: { status: recommend, proposed: "1" }
+    - fixture: kubelet-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.kubelet.swap_enabled
+  title: Swap enabled on a kubelet node
+  kind: report
+  param: swap
+  domain: memory
+  applies:
+    when: "hasApp(\"kubelet\")"
+  detect: "facts.Memory.SwapTotalBytes > 0"
+  risk: low
+  rationale: >-
+    The kubeadm prerequisites say the kubelet's default behaviour is to fail to start when swap is detected, so swap must either be disabled (`swapoff -a`, plus removal from /etc/fstab or systemd.swap to survive reboots) or tolerated with `failSwapOn: false`. Even when tolerated, workloads get no swap unless `memorySwap.swapBehavior` is set to something other than the default NoSwap, while systemd services and the kubelet itself may still swap. The Kubernetes swap documentation adds that swap on a node can degrade system daemons and recommends protecting the system slice (`memory.swap.max=0`) and its I/O latency. Swap support for Linux nodes was introduced as alpha in Kubernetes 1.22 and graduated to beta in 1.28 behind the NodeSwap feature gate (Kubernetes 1.28 swap blog post). This is a prompt to check intent, not a fault: swap with failSwapOn false is a supported configuration.
+  advice: >-
+    Swap is enabled on this node. Confirm the kubelet is deliberately configured for it (`failSwapOn: false`, and `memorySwap.swapBehavior: LimitedSwap` if Pods should use it); otherwise the kubelet will refuse to start. Disable swap with `swapoff -a` and remove it from /etc/fstab or systemd.swap if it is not intended.
+  verify: "free shows Swap: 0, or the kubelet config sets failSwapOn: false (and swapBehavior if workloads should swap)"
+  sources:
+    - https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+    - https://kubernetes.io/docs/concepts/cluster-administration/swap-memory-management/
+    - https://kubernetes.io/blog/2023/08/24/swap-linux-beta/
+  tests:
+    - fixture: kubelet-stock
+      expect: { status: firing }
+    - fixture: kubelet-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
