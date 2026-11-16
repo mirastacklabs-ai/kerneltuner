@@ -1,0 +1,20 @@
+- id: net.core.somaxconn
+  title: Listen backlog cap
+  kind: sysctl
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    kernel: ">=4.9"
+    when: "workload.Listeners > 0"
+  recommend: "max(4096, current)"
+  compare: gte
+  evidence:
+    - metric: TcpExt.ListenOverflows
+      rate_gt: 0
+  namespaced: true
+  risk: low
+  rationale: Small backlog drops connections.
+  sources: [https://docs.kernel.org/networking/ip-sysctl.html]
+  tests:
+    - fixture: f1
+      expect: { status: recommend, proposed: "4096" }

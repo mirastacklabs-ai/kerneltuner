@@ -1,0 +1,51 @@
+kerneltuner v0.0.0-test | kernel 6.8.0-31-generic | CPU EPYC 9654 (2 sockets, 192 cores, 384 threads) | RAM 1536 GiB | accelerators: 1x amd, 2x nvidia | Warnings: 1
+
+== NETWORK ==
+STATUS     RULE                             TARGET  CURRENT -> PROPOSED                          RISK    EVIDENCE
+recommend  net.core.somaxconn                       128 -> 4096                                  low     TcpExt.ListenOverflows=3.2 (> 0)
+    Small backlog drops connections.
+recommend  nic.ring                         eth0    256 -> 4096                                  low
+    Absorb bursts.
+recommend  nic.txring                       eth0    256 -> 2048                                  low
+    Absorb bursts.
+recommend  nic.channels                     eth0    4 -> 32                                      low
+    One per core.
+recommend  net.ipv4.tcp_rmem                        4096 131072 6291456 -> 4096 131072 16777216  medium
+    Long fat pipes need larger buffers.
+ok         net.ipv4.tcp_congestion_control          bbr                                          low
+    BBR.
+
+== LIMITS ==
+STATUS     RULE            TARGET         CURRENT -> PROPOSED  RISK  EVIDENCE
+recommend  limits.nofile   nginx.service  1024 -> 65536        low
+    Default is too low.
+recommend  limits.memlock  vllm           65536 -> infinity    low
+    Pinned buffers.
+
+== MEMORY ==
+STATUS   RULE           TARGET  CURRENT -> PROPOSED  RISK    EVIDENCE
+firing   anti.thp               -                    medium
+    THP stalls latency-sensitive databases.
+managed  vm.swappiness          60 -> 10             low
+    tuned profile sets vm.swappiness=10
+
+== CPU ==
+STATUS  RULE    TARGET  CURRENT -> PROPOSED  RISK  EVIDENCE
+error   broken          -                    low
+    error: recommend: boom
+
+== STORAGE ==
+STATUS     RULE               TARGET   CURRENT -> PROPOSED  RISK  EVIDENCE
+recommend  storage.scheduler  nvme0n1  mq-deadline -> none  low
+    NVMe has its own queues.
+
+== AI ==
+STATUS     RULE           TARGET  CURRENT -> PROPOSED  RISK    EVIDENCE
+recommend  rt.vllm        vllm    -                    low
+    Throughput.
+recommend  cmdline.iommu          (unset) -> pt        medium
+    [reboot required] Lower DMA overhead.
+recommend  cmdline.nosmt          -                    high
+    [reboot required] Fewer interrupts.
+
+warning: could not read /proc/net/netstat

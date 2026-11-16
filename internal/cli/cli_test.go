@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 )
 
@@ -12,14 +11,6 @@ func TestRootRegistersSubcommands(t *testing.T) {
 		if c, _, err := root.Find([]string{name}); err != nil || c.Name() != name {
 			t.Errorf("subcommand %q not registered", name)
 		}
-	}
-}
-
-func TestStubFails(t *testing.T) {
-	root := NewRootCmd()
-	root.SetArgs([]string{"scan"})
-	if err := root.Execute(); !errors.Is(err, errNotImplemented) {
-		t.Fatalf("got %v, want errNotImplemented", err)
 	}
 }
 
@@ -33,14 +24,6 @@ func TestVersionOutput(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("Version:")) {
 		t.Errorf("unexpected output %q", buf.String())
-	}
-}
-
-func TestValidateStub(t *testing.T) {
-	root := NewRootCmd()
-	root.SetArgs([]string{"validate"})
-	if err := root.Execute(); !errors.Is(err, errNotImplemented) {
-		t.Fatalf("got %v, want errNotImplemented", err)
 	}
 }
 

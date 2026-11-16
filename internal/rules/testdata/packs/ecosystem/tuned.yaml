@@ -1,0 +1,14 @@
+profiles:
+  throughput-performance:
+    sysctl:
+      vm.swappiness: 10
+      net.core.somaxconn: 2048
+  network-throughput:
+    include: throughput-performance
+    sysctl:
+      net.core.somaxconn: 4096
+      net.core.rmem_max: 16777216
+  accelerator-performance:
+    include: unknown-stock-profile
+    sysctl:
+      kernel.numa_balancing: 0

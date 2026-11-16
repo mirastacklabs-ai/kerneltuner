@@ -1,0 +1,7 @@
+# tuned profiles and the sysctls they set (data, not rules). See rules/README.md.
+#
+# profiles:
+#   <profile-name>:
+#     include: <parent-profile>     # optional; the child overrides the parent
+#     sysctl: { <dotted.name>: <value> }
+profiles: {}

@@ -1,0 +1,5 @@
+description: Synthetic host with a tuned listen backlog
+synthetic: true
+extends: low-backlog
+files:
+  proc/sys/net/core/somaxconn: "65535\n"

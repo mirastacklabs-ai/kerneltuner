@@ -21,9 +21,6 @@ func TestPipelineStubs(t *testing.T) {
 			t.Fatalf("sample(%v) = %v %v %v", d, v, r, err)
 		}
 	}
-	if len(p.Facts.Warnings) == 0 {
-		t.Error("expected warnings from stubs")
-	}
 	if recs := p.evaluate(map[string]float64{}, map[string]float64{}); len(recs) != 0 {
 		t.Errorf("recs = %v", recs)
 	}

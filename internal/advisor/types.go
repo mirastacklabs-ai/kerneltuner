@@ -49,10 +49,3 @@ type Input struct {
 	Root      facts.Root
 	Ecosystem rules.Ecosystem
 }
-
-// Evaluate runs rs against in and returns recommendations sorted by score,
-// descending. Stub.
-func Evaluate(rs []rules.Rule, in Input) []Recommendation {
-	_, _ = rs, in
-	return nil
-}

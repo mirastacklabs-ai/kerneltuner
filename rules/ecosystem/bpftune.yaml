@@ -1,0 +1,4 @@
+# sysctls that bpftune tunes at runtime (data, not rules). See rules/README.md.
+#
+# sysctls: [net.ipv4.tcp_rmem, net.core.somaxconn]
+sysctls: []
