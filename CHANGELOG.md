@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Roadmap (post-v1): `--etc-root` and `--var-root` to split roots for `apply` testing.
 - Documentation: `docs/COVERAGE.md`, `docs/RULE-AUTHORING.md`, `CONTRIBUTING.md`, `SECURITY.md` and `NOTICE`.
 
 ## [1.0.0] - 2026-11-16
@@ -23,8 +24,9 @@ First release. kerneltuner is a Linux kernel tuning advisor and an observe-only 
 - Advisor: statuses `recommend`, `ok`, `not-applicable`, `managed`, `host-only`, `firing` and `error`; risk-weighted scoring; reconciliation of several rules for one setting, with a `CONFLICT` block when proposals disagree.
 - Ecosystem awareness: parameters managed by an active `tuned` profile or a running `bpftune` are reported as `managed`, not re-recommended. `generate` can emit a `tuned` profile.
 - Output formats from `generate`: sysctl, limits, systemd, tuned, cmdline, NIC, runtime advice and a combined set.
-- First-class citations: rule sources can carry a verbatim quote and section, `scan` prints footnotes, there is a Markdown report, and `sources --check` verifies that registered pages still exist and still contain the cited quotes. A weekly CI job runs the check.
+- First-class citations: rule sources can carry a verbatim quote and section, `scan` prints footnotes, there is a Markdown report, and `sources --check` verifies that registered pages still exist and still contain the cited quotes. A weekly CI job runs the check. All 137 rules carry verified verbatim quotes, and `validate` treats a missing quote as an error (`--strict-citations` is kept as a no-op). A same-host redirect (for example `/latest/` to `/v3.7/`) is a warning (`WARN-MOVED`) with exit 0 when the quote is still on the final page; a cross-host redirect, an HTTP error or a missing quote fails. `sources --check` requires https URLs, follows at most 5 redirects and refuses an https-to-http downgrade. Raw sources (`text/plain`, `.c`, `.rst`, `.md`, `.yaml`, man pages) are compared without HTML stripping.
 - `capture` with a redacted fixture mode for contributing real-host fixtures.
+- JSON format: in `scan --json` and `explain --json`, `sources` is a list of objects (`url`, `quote`, `section`, `project`, `title`, `last_reviewed`); the former list of URL strings is now `source_urls`.
 - Rule knowledge base: 137 rules, 398 golden tests, 145 source entries (121 distinct URLs) and 112 fixtures:
   - kernel (36 rules): network 17, memory 9, CPU 5, limits 3, storage 2
   - AI inference (25 rules): AMD ROCm 10, NVIDIA 5, Intel Gaudi 4, CPU inference 3, RDMA 3
@@ -48,7 +50,6 @@ First release. kerneltuner is a Linux kernel tuning advisor and an observe-only 
 - Rules are sourced from documentation, not benchmarks.
 - No application config files and no process environment are read.
 - GPU, Gaudi and RDMA fixtures are synthetic.
-- No existing rule carries a verbatim citation quote yet; `validate` warns about this.
 - Pulsar, NATS, CoreDNS, Prometheus and Intel Data Center GPU Max and Arc have no rules.
 
 [Unreleased]: https://github.com/mirastacklabs-ai/kerneltuner/compare/v1.0.0...HEAD

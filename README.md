@@ -57,28 +57,38 @@ sudo kerneltuner rollback --yes
 
 ## Example output
 
-Real output from the bundled fixtures, which are synthetic `/proc` and `/sys` trees used by the tests. Output is trimmed: lines are shortened, repeated rows and most References are cut, and `...` marks the cuts. Each reference also carries a `quote` field with the upstream text where the rule has one; quote backfill is in progress, see [docs/COVERAGE.md](docs/COVERAGE.md).
+Real output from the bundled fixtures, which are synthetic `/proc` and `/sys` trees used by the tests. Output is trimmed: lines are shortened, repeated rows and most References are cut, and `...` marks the cuts. Every reference carries a verbatim quote from the upstream page, and the full `--json` output has the same quote and section fields.
 
 A legacy 4.9 kernel web host (`scan --fixture legacy-4.9-c10k`):
 
 ```text
 kerneltuner dev | kernel 4.9.0-19-amd64
 CPU Intel(R) Xeon(R) CPU E3-1270 v6 @ 3.80GHz (1 sockets, 4 cores, 8 threads) | RAM 31 GiB
-accelerators: none | Warnings: 1
+accelerators: none | Warnings: 0
 
 == NETWORK ==
-STATUS     RULE                         CURRENT -> PROPOSED    RISK    EVIDENCE
-recommend  net.core.somaxconn           128 -> 4096            low     TcpExt.ListenOverflows=38.5 (> 0) [1,2,3,4]
+STATUS     RULE                                TARGET  CURRENT -> PROPOSED                          RISK    EVIDENCE
+recommend  net.core.somaxconn                          128 -> 4096                                  low     TcpExt.ListenOverflows=38.5 (> 0) [1,2,3,4]
     The accept queue of every listening socket is min(the application's listen() backlog,
     somaxconn).
-recommend  net.ipv4.ip_local_port_range 32768 60999 -> 1024 65535  medium  sockstat.tcp.tw=2.15e+04 (> 2e+04) [1]
-firing     antipattern.tcp_tw_recycle   -                      high    [7,8]
-    tcp_tw_recycle was removed in Linux 4.12 (commit 4396e46187ca) because it breaks clients behind
-    NAT: ...
+recommend  net.ipv4.tcp_max_syn_backlog                512 -> 4096                                  low     TcpExt.ListenDrops=38.5 (> 0) [5,6,7]
+    This is the per-listener limit of half-open (SYN_RECV) request sockets, about 304 bytes each.
+recommend  net.ipv4.ip_local_port_range                32768 60999 -> 1024 65535                    medium  sockstat.tcp.tw=2.15e+04 (> 2e+04) [8,9]
+    The default range is 32768 to 60999 (about 28k ports).
 ...
+firing     antipattern.tcp_tw_recycle                  -                                            high    [21,22]
+    tcp_tw_recycle was removed in Linux 4.12 (commit 4396e46187ca) because it breaks clients behind
+    NAT: the per-destination timestamp it relied on is not monoto...
+...
+
 References
-[1] linux (reviewed 2026-11-16)
+[1] IP Sysctl — somaxconn (reviewed 2026-11-16)
+    "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128
+    before linux-5.4)"
     https://docs.kernel.org/networking/ip-sysctl.html
+[2] Linux_5.4 - Linux Kernel Newbies — Networking (reviewed 2026-11-16)
+    "Increase SOMAXCONN (/proc/sys/net/core/somaxconn) from 128 to 4096"
+    https://kernelnewbies.org/Linux_5.4
 ...
 126 more result(s) hidden (ok, not-applicable, managed, host-only); use --all to show them.
 ```
@@ -88,19 +98,30 @@ A GPU host (`scan --fixture gpu-8xh100`), AI section:
 ```text
 kerneltuner dev | kernel 6.8.0-45-generic
 CPU Intel(R) Xeon(R) Platinum 8462Y+ (2 sockets, 64 cores, 128 threads) | RAM 2016 GiB
-accelerators: 8x nvidia | Warnings: 1
+accelerators: 8x nvidia | Warnings: 0
 
+...
 == AI ==
 STATUS     RULE                       TARGET        CURRENT -> PROPOSED  RISK    EVIDENCE
-firing     ai.nvidia.gpudirect-iommu                -                    medium  [8,9]
+firing     ai.nvidia.gpudirect-iommu                -                    medium  [11,12]
     [reboot required] GPUDirect RDMA relies on all physical addresses being the same from the GPU's
     and the NIC's point of view, so it is incompatible with any IOMMU translation o...
-recommend  ai.nvidia.persistenced                   stopped -> running   low     [10]
-    Without persistence, the driver unloads GPU state when the last client closes the device file,
-    so the next CUDA start pays the initialisation cost again.
+firing     ai.nvidia.peermem                        -                    low     [13,14]
+    nvidia-peermem ships with the GPU driver and gives Mellanox InfiniBand HCAs direct peer access
+    to GPU memory.
 ...
-[10] nvidia (reviewed 2026-11-16)
-     https://docs.nvidia.com/deploy/driver-persistence/persistence-daemon.html
+
+References
+...
+[11] GPUDirect RDMA — IOMMUs (reviewed 2026-11-16)
+     "This makes it incompatible with IOMMUs performing any form of translation other than 1:1,
+     hence they must be disabled or configured for pass-through translation for GPUDirect RDMA to
+     work."
+     https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
+[12] AMD Instinct MI300X — Check kernel boot arguments (reviewed 2026-11-16)
+     "Pass: Contains pci=realloc=off, amd_iommu=on or intel_iommu=on, and iommu=pt"
+     https://instinct.docs.amd.com/projects/system-acceptance/en/latest/gpus/mi300x.html
+...
 ```
 
 The shareable Markdown report (`scan --format md`), same legacy fixture:
@@ -110,16 +131,32 @@ The shareable Markdown report (`scan --format md`), same legacy fixture:
 
 Generated by kerneltuner dev on 2026-11-16. Review before applying: these are recommendations, not verified for your workload.
 
+## Host
+
+- kernel 4.9.0-19-amd64
+- CPU Intel(R) Xeon(R) CPU E3-1270 v6 @ 3.80GHz (1 sockets, 4 cores, 8 threads)
+- RAM 31 GiB
+- accelerators: none
+- Warnings: 0
+
+## Findings
+
 ### NETWORK
 
 | Status | Rule | Target | Change | Risk | Why | Refs |
 |---|---|---|---|---|---|---|
 | recommend | `net.core.somaxconn` |  | `128 -> 4096` | low | The accept queue of every listening socket is min(the application's listen() backlog, somaxconn). Evidence: TcpExt.ListenOverflows=38.5 (> 0) | [1,2,3,4] |
+| recommend | `net.ipv4.tcp_max_syn_backlog` |  | `512 -> 4096` | low | This is the per-listener limit of half-open (SYN_RECV) request sockets, about 304 bytes each. Evidence: TcpExt.ListenDrops=38.5 (> 0) | [5,6,7] |
 ...
 ## References
 
-- **[1]** linux (reviewed 2026-11-16)
-  <https://docs.kernel.org/networking/ip-sysctl.html>
+- **[1]** IP Sysctl — somaxconn (reviewed 2026-11-16)
+  > "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"
+  >
+  > <https://docs.kernel.org/networking/ip-sysctl.html>
+- **[2]** Linux_5.4 - Linux Kernel Newbies — Networking (reviewed 2026-11-16)
+  > "Increase SOMAXCONN (/proc/sys/net/core/somaxconn) from 128 to 4096"
+...
 ```
 
 ## What it covers

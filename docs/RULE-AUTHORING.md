@@ -12,7 +12,7 @@ Read both once before writing a rule. This guide is the order of work and the pi
 A rule is accepted when it has all of these:
 
 1. **An official source.** The URL is the project's own documentation, source tree or shipped files (kernel docs, the vendor's guide, the app's repository). Blog posts, forum answers and third-party mirrors do not count. If the official site cannot be fetched, cite the docs source in the project's repository, as the Kafka and RabbitMQ packs do.
-2. **A verbatim quote.** Copy the sentence that supports the rule from the page and put it in the rule's `sources` entry as `{url, section, quote}` (at most 300 characters, plain text). The format and the rules of thumb are in the "Citations" section of [rules/README.md](../rules/README.md). `kerneltuner sources --check` fetches each page and fails if the quote is gone, so a paraphrase breaks the check. If you cannot find text that says what the rule says, there is no rule: do not write one from memory. Today no existing rule carries a quote yet, and `validate` only warns; new rules should include one, and `validate --strict-citations` is the check to run.
+2. **A verbatim quote.** Copy the sentence that supports the rule from the page and put it in the rule's `sources` entry as `{url, section, quote}` (at most 300 characters, plain text). The format and the rules of thumb are in the "Citations" section of [rules/README.md](../rules/README.md). `kerneltuner sources --check` fetches each page and fails if the quote is gone, so a paraphrase breaks the check. If you cannot find text that says what the rule says, there is no rule: do not write one from memory. `validate` rejects a source without a quote.
 3. **At least one positive and one negative golden test.** The positive test uses a fixture where the rule fires (`recommend` or `firing`). The negative test uses a fixture where it does not (`ok` or `not-applicable`). Both assert the status; assert `proposed` too when the rule computes a value.
 
 Also required:
@@ -128,7 +128,7 @@ docker run --rm -v "$PWD":/src -v kerneltuner-gocache:/go -w /src -e GOCACHE=/go
 
 `--fixture NAME` is a hidden developer flag on `scan`, `generate` and `apply`. It materializes `testdata/fixtures/NAME` into a temp dir, uses it as `--root` and injects its `values` and `rates`. Run it from inside the repository, because fixtures are found by walking up to `go.mod`. `--rules-dir` replaces the embedded packs and `--pack` limits the run to one pack. Use `explain <rule-id>` to read the rule as a user sees it.
 
-`validate` must pass with no problems before you open a pull request. CI runs it. Run `validate --strict-citations` too: it flags sources without a quote, and the existing rules will still show up there until they are backfilled. Check your quotes against the live page with `sources --check --only <pack>`; this makes outbound HTTP requests and sends no host data.
+`validate` must pass with no problems before you open a pull request. CI runs it. It flags any source without a quote. Check your quotes against the live page with `sources --check --only <pack>`; this makes outbound HTTP requests and sends no host data.
 
 ## Contributing a fixture from a real host
 

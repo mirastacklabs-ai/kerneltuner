@@ -93,7 +93,7 @@ Kinds: S sysctl, F sysfs, L limit, N nic, C cmdline, V service, R runtime, P rep
 | `ecosystem` | data only | 0 | `tuned` profiles and `bpftune` sysctls, used for the `managed` status | Hand-curated from the tuned master branch; not generated | n/a |
 | `apps/pulsar`, `apps/nats`, `apps/coredns`, `apps/prometheus` | 0 | 0 | Workload detection only | See [Packs with no rules](#packs-with-no-rules) | none |
 
-Several gaps in the older `NOTES.md` files (no kernel config facts, no mount table, no nproc or `oom_score_adj` facts, no distro fact) were closed by the engine fix passes recorded in [ENGINE-ISSUES.md](ENGINE-ISSUES.md). The matching rules were not all written afterwards, so those gaps still show as unruled.
+Several gaps in the older `NOTES.md` files (no kernel config facts, no mount table, no nproc or `oom_score_adj` facts, no distro fact) were closed by the engine fix passes recorded in [ENGINE-ISSUES.md](ENGINE-ISSUES.md). The mount table, kernel config and nproc/`oom_score_adj` gaps in the `NOTES.md` files are therefore closed: those facts now exist and rules can use them. The matching rules were not all written afterwards, so some of those gaps still show as unruled in the matrix above.
 
 ## What kerneltuner does not do
 
@@ -102,7 +102,7 @@ Several gaps in the older `NOTES.md` files (no kernel config facts, no mount tab
 - **No reading of process environment.** `/proc/<pid>/environ` is never read, so variables such as `OMP_NUM_THREADS`, `ONEDNN_MAX_CPU_ISA`, `NCCL_*` and `ERL_MAX_PORTS` are invisible. Rules that depend on them are written as `runtime` advice. (`capture` reads one entry only: `container=` from PID 1.)
 - **GPU, Gaudi and RDMA fixtures are synthetic.** 111 of the 112 fixtures are hand-built trees of fake `/proc` and `/sys` files, including every NVIDIA, AMD, Intel and RDMA fixture. They test the rule logic, not that a real driver exposes those paths in that format. The one captured fixture is `colima-vm`. Real-host captures are welcome; see [RULE-AUTHORING.md](RULE-AUTHORING.md).
 - **Some thresholds are heuristics.** Where the upstream docs give no number, the rule states its own screening threshold and says so in its `rationale` (search the YAML for `heuristic`, `screening threshold` or `our inference`). Examples: the 1 event/s `allocstall` threshold in `kernel/memory`, the doubling formula in `limits.file_max`, the soft limit of 1024 in `app.envoy.fd_limit`. These are starting points, not tuned optima.
-- **Quotes are not backfilled yet.** Every rule cites a registered official URL, but at v1.0.0 none of the 137 rules carries a verbatim `quote` in its `sources` entry. `validate` warns about this and `validate --strict-citations` turns it into an error. The supporting text is in each pack's `NOTES.md` until the quotes are added.
+- **Quotes are verified, not endorsements.** All 137 rules carry verbatim quotes in their `sources` entries, and `validate` rejects a source without one. `sources --check` fetches every registered page and confirms each quote is still there; it runs weekly in CI. A quote shows that the upstream text says what the rule cites, not that the advice is optimal for your hardware.
 - **No per-process I/O priority, CPU affinity or SMT topology tuning.** `ionice` is only available through a syscall, and affinity needs per-process parsing no rule has needed yet.
 - **No automatic changes.** The agent only observes. Changes go through `apply`, which supports `sysctl`, `sysfs` and `limit` rules only.
 - **No Windows, BSD or macOS support.** Linux only, amd64 and arm64.
