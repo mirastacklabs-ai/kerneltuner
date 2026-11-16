@@ -1,0 +1,2 @@
+numa_hit 200
+numa_miss 6

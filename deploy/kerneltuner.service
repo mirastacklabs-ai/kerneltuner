@@ -1,0 +1,38 @@
+[Unit]
+Description=kerneltuner observe-only kernel tuning agent
+Documentation=https://github.com/mirastacklabs-ai/kerneltuner
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kerneltuner agent
+Restart=on-failure
+RestartSec=5s
+SyslogIdentifier=kerneltuner
+
+# The agent only reads /proc and /sys and writes its state file under
+# /run/kerneltuner. Everything else is locked down.
+RuntimeDirectory=kerneltuner
+ProtectSystem=strict
+ReadWritePaths=/run/kerneltuner
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+# Reads of /proc/sys and /sys keep working; only writes are blocked.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+# CAP_DAC_READ_SEARCH: read /proc/<pid>/fd and other files owned by other
+#   users (socket-to-process mapping, per-process limits).
+# CAP_SYS_PTRACE: required by the kernel to readlink /proc/<pid>/fd and read
+#   /proc/<pid>/limits of processes the agent does not own.
+# CAP_NET_ADMIN: read NIC ring and channel sizes through the ethtool ioctl.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_NET_ADMIN
+AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target

@@ -1,11 +1,8 @@
 package metrics
 
 import (
-	"errors"
 	"strings"
 	"time"
-
-	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 )
 
 // Snapshot is one sample of metric values.
@@ -14,16 +11,18 @@ type Snapshot struct {
 	Values map[string]float64
 }
 
-// Sample reads live counters under r. Stub.
-func Sample(r facts.Root) (*Snapshot, error) {
-	_ = r
-	return nil, errors.New("not implemented")
+// gaugePrefixes are the DESIGN.md gauges plus kernel-defined instantaneous
+// values (vmstat nr_* page counts, a few Tcp MIB fields) that are not counters.
+var gaugePrefixes = []string{
+	"conntrack.", "fs.file_nr.", "sockstat.", "psi.", "vmstat.nr_",
+	"Tcp.CurrEstab", "Tcp.MaxConn", "Tcp.RtoAlgorithm", "Tcp.RtoMin", "Tcp.RtoMax",
 }
 
 // IsCounter reports whether key is a monotonically increasing counter.
-// Gauges are conntrack.*, fs.file_nr.*, sockstat.*, psi.*.
+// Gauges are conntrack.*, fs.file_nr.*, sockstat.*, psi.*, vmstat.nr_*, and
+// the Tcp MIB gauges CurrEstab, MaxConn, Rto*.
 func IsCounter(key string) bool {
-	for _, p := range []string{"conntrack.", "fs.file_nr.", "sockstat.", "psi."} {
+	for _, p := range gaugePrefixes {
 		if strings.HasPrefix(key, p) {
 			return false
 		}
