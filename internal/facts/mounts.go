@@ -1,6 +1,8 @@
 package facts
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -65,13 +67,17 @@ func collectMounts(r Root, f *Facts) {
 	var b []byte
 	var err error
 	for _, rel := range []string{"self/mounts", "mounts"} {
-		if b, err = os.ReadFile(filepath.Join(r.Proc, rel)); err == nil {
+		b, err = os.ReadFile(filepath.Join(r.Proc, rel))
+		if err == nil {
 			break
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			f.warnf("cannot read %s: %v", filepath.Join(r.Proc, rel), err)
+			return
 		}
 	}
 	if err != nil {
-		f.warnf("cannot read %s: %v", filepath.Join(r.Proc, "self/mounts"), err)
-		return
+		return // optional: absent in fixtures and minimal containers
 	}
 	f.Mounts = parseMounts(string(b))
 	for i := range f.Mounts {

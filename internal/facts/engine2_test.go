@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
@@ -59,6 +60,11 @@ func TestMountsFallbackAndMissing(t *testing.T) {
 	}
 	if len(f.Mounts) != 0 || f.MountOf("/x").MountPoint != "" {
 		t.Errorf("missing table must give no mounts: %+v", f.Mounts)
+	}
+	for _, w := range f.Warnings {
+		if strings.Contains(w, "mounts") {
+			t.Errorf("absent mounts table must not warn: %q", w)
+		}
 	}
 	write(t, dir+"/proc/mounts", "/dev/sda1 / ext4 rw 0 0\n")
 	if f, _ = facts.Collect(facts.RootAt(dir)); len(f.Mounts) != 1 || f.Mounts[0].FSType != "ext4" {
