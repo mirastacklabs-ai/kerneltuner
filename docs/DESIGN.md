@@ -103,13 +103,15 @@ type Tuned struct { Active bool; Profile string } // /etc/tuned/active_profile +
 // internal/workload
 type Workload struct { Apps []App; Listeners int; ListenPorts []int }
 type App struct {
-    Name string // canonical ids: nginx haproxy envoy redis valkey postgres mysql kafka elasticsearch
-                // vllm sglang tgi triton llama.cpp ollama pytorch jvm
+    Name string // canonical id, see list below; workload.KnownApps() returns them
     PIDs []int; Ports []int; Unit string
+    Declared bool // added via --workload NAME[,NAME...], not detected
     NoFileSoft, NoFileHard, MemlockSoft uint64; MaxOpenFDs int
 }
-func (w *Workload) Has(name string) bool
+func (w *Workload) Has(name string) bool // true for declared apps too
+func KnownApps() []string
 ```
+Canonical app ids: `vllm sglang tgi triton llama.cpp ollama pytorch cassandra kafka pulsar zookeeper elasticsearch opensearch jvm redis valkey memcached nginx haproxy envoy httpd postgres mariadb mysql clickhouse rabbitmq nats kubelet etcd containerd cilium coredns prometheus fluent-bit`. `jvm` is the java-only fallback. The global `--workload` flag declares apps as present (validated against this list) so a fresh host can be tuned before the software is installed; `loadPipeline` appends them as `App{Declared: true}` when not detected.
 Detection works by matching comm/cmdline (`vllm serve`, `vllm.entrypoints`, `sglang.launch_server`, `text-generation-launcher`, `tritonserver`, `llama-server`/`llama-cli`, `ollama`). Listeners are read from `/proc/net/tcp{,6}` in state `0A`.
 
 ```go

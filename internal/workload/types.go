@@ -7,9 +7,8 @@ type Workload struct {
 	ListenPorts []int
 }
 
-// App is a detected application. Name is canonical: nginx haproxy envoy redis
-// valkey postgres mysql kafka elasticsearch vllm sglang tgi triton llama.cpp
-// ollama pytorch jvm.
+// App is a detected or declared application. Name is canonical; see KnownApps.
+// Declared apps come from --workload and have no PIDs or ports.
 type App struct {
 	Name        string
 	PIDs        []int
@@ -19,6 +18,7 @@ type App struct {
 	NoFileHard  uint64
 	MemlockSoft uint64
 	MaxOpenFDs  int
+	Declared    bool // set via --workload, not detected
 }
 
 // Has reports whether an app with the given canonical name was detected.

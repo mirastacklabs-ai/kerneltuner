@@ -21,6 +21,7 @@ type globalOpts struct {
 	Domain   string
 	Pack     string
 	JSON     bool
+	Workload []string
 }
 
 // Root resolves the filesystem root: DefaultRoot, or RootAt(--root).
@@ -46,6 +47,7 @@ func NewRootCmd() *cobra.Command {
 	pf.StringVar(&g.Domain, "domain", "", "only rules in this domain (network|limits|memory|cpu|storage|ai)")
 	pf.StringVar(&g.Pack, "pack", "", "only rules in this pack (e.g. kernel/network)")
 	pf.BoolVar(&g.JSON, "json", false, "machine-readable JSON output")
+	pf.StringSliceVar(&g.Workload, "workload", nil, "declare workloads NAME[,NAME...] as present even if not running, to tune a host before installing the software (unknown names are rejected)")
 	root.AddCommand(
 		newScanCmd(g),
 		newExplainCmd(g),
