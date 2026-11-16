@@ -33,7 +33,7 @@ func TestGlobalRoot(t *testing.T) {
 		t.Fatal("root resolution")
 	}
 	root := NewRootCmd()
-	for _, f := range []string{"root", "rules-dir", "domain", "pack", "json"} {
+	for _, f := range []string{"root", "rules-dir", "domain", "pack", "json", "workload"} {
 		if root.PersistentFlags().Lookup(f) == nil {
 			t.Errorf("missing global flag %s", f)
 		}

@@ -30,13 +30,17 @@ type pipeline struct {
 // (embedded, or --rules-dir when set), filtered by --domain and --pack.
 func loadPipeline(g *globalOpts) (*pipeline, error) {
 	p := &pipeline{Root: g.Root()}
-	var err error
+	declared, err := workload.ParseDeclared(g.Workload)
+	if err != nil {
+		return nil, fmt.Errorf("--workload: %w", err)
+	}
 	if p.Facts, err = facts.Collect(p.Root); err != nil {
 		return nil, fmt.Errorf("collect facts: %w", err)
 	}
 	if p.Workload, err = workload.Detect(p.Root, p.Facts); err != nil {
 		return nil, fmt.Errorf("detect workload: %w", err)
 	}
+	p.Workload.Declare(declared)
 	all, eco, srcs, err := loadRules(g)
 	if err != nil {
 		return nil, err

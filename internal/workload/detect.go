@@ -2,6 +2,7 @@ package workload
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,16 +32,78 @@ var matchers = []matcher{
 	{App: "llama.cpp", Comms: []string{"llama-server", "llama-cli"}},
 	{App: "ollama", Comms: []string{"ollama"}},
 	{App: "pytorch", Comms: []string{"torchrun"}},
+	// specific JVM apps before the generic jvm fallback
+	{App: "cassandra", Comms: []string{"java"}, Cmd: []string{"org.apache.cassandra.service.CassandraDaemon"}},
 	{App: "kafka", Comms: []string{"java"}, Cmd: []string{"kafka.Kafka"}},
-	{App: "elasticsearch", Comms: []string{"java"}, Cmd: []string{"org.elasticsearch"}},
+	{App: "pulsar", Comms: []string{"java"}, Cmd: []string{"org.apache.pulsar"}},
+	{App: "zookeeper", Comms: []string{"java"}, Cmd: []string{"org.apache.zookeeper.server"}},
+	{App: "elasticsearch", Comms: []string{"java"}, Cmd: []string{"org.elasticsearch.bootstrap"}},
+	{App: "opensearch", Comms: []string{"java"}, Cmd: []string{"org.opensearch.bootstrap"}},
 	{App: "jvm", Comms: []string{"java"}},
 	{App: "redis", Comms: []string{"redis-server"}},
 	{App: "valkey", Comms: []string{"valkey-server"}},
+	{App: "memcached", Comms: []string{"memcached"}},
 	{App: "nginx", Comms: []string{"nginx"}},
 	{App: "haproxy", Comms: []string{"haproxy"}},
 	{App: "envoy", Comms: []string{"envoy"}},
-	{App: "postgres", Comms: []string{"postgres"}},
-	{App: "mysql", Comms: []string{"mysqld", "mariadbd"}},
+	{App: "httpd", Comms: []string{"httpd", "apache2"}},
+	{App: "postgres", Comms: []string{"postgres", "postmaster"}},
+	// mariadb before mysql: mariadbd, or mysqld whose path/cmdline mentions mariadb
+	{App: "mariadb", Comms: []string{"mariadbd"}},
+	{App: "mariadb", Comms: []string{"mysqld"}, Cmd: []string{"mariadb"}},
+	{App: "mysql", Comms: []string{"mysqld"}},
+	{App: "clickhouse", Comms: []string{"clickhouse-server"}},
+	{App: "clickhouse", Comms: []string{"clickhouse"}, Cmd: []string{" server"}},
+	{App: "rabbitmq", Comms: []string{"beam.smp"}, Cmd: []string{"-s rabbit", "rabbit"}},
+	{App: "nats", Comms: []string{"nats-server"}},
+	{App: "kubelet", Comms: []string{"kubelet"}},
+	{App: "etcd", Comms: []string{"etcd"}},
+	{App: "containerd", Comms: []string{"containerd"}},
+	{App: "cilium", Comms: []string{"cilium-agent"}},
+	{App: "coredns", Comms: []string{"coredns"}},
+	{App: "prometheus", Comms: []string{"prometheus"}},
+	{App: "fluent-bit", Comms: []string{"fluent-bit", "td-agent-bit"}},
+}
+
+// KnownApps returns the canonical app ids in matcher-table order.
+func KnownApps() []string {
+	out := make([]string, len(appOrder))
+	for n, i := range appOrder {
+		out[i] = n
+	}
+	return out
+}
+
+// ParseDeclared validates declared workload names (trimmed, deduplicated,
+// order kept). Unknown names yield an error listing the valid ids.
+func ParseDeclared(names []string) ([]string, error) {
+	known := map[string]bool{}
+	for _, n := range KnownApps() {
+		known[n] = true
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] {
+			continue
+		}
+		if !known[n] {
+			return nil, fmt.Errorf("unknown workload %q; valid: %s", n, strings.Join(KnownApps(), ", "))
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// Declare appends each named app not already present as App{Declared: true}.
+func (w *Workload) Declare(names []string) {
+	for _, n := range names {
+		if !w.Has(n) {
+			w.Apps = append(w.Apps, App{Name: n, Declared: true})
+		}
+	}
 }
 
 // appOrder fixes the order of Apps in the result (matcher table order).
