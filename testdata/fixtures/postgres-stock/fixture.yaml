@@ -1,0 +1,16 @@
+description: "Bare-metal PostgreSQL 16 under systemd on kernel 5.15 with stock vm.overcommit_memory=0, no huge pages reserved, THP always"
+synthetic: true
+extends: base-linux
+files:
+  "proc/1840/cgroup": "0::/system.slice/postgresql@16-main.service\n"
+  "proc/1840/cmdline": "/usr/lib/postgresql/16/bin/postgres\u0000-D\u0000/var/lib/postgresql/16/main\u0000-c\u0000config_file=/etc/postgresql/16/main/postgresql.conf\u0000"
+  "proc/1840/comm": "postgres\n"
+  "proc/1840/fd/0": ""
+  "proc/1840/fd/1": ""
+  "proc/1840/fd/2": ""
+  "proc/1840/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                1024                files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "sys/kernel/mm/transparent_hugepage/enabled": "[always] madvise never\n"
+  "sys/block/nvme0n1/queue/rotational": "0\n"
+  "sys/block/nvme0n1/queue/scheduler": "[none] mq-deadline kyber bfq\n"
+  "sys/block/nvme0n1/queue/read_ahead_kb": "128\n"
+  "sys/block/nvme0n1/queue/nr_requests": "256\n"

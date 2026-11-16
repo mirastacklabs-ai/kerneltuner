@@ -1,0 +1,8 @@
+- url: https://dev.mysql.com/doc/refman/8.4/en/optimizing-innodb-diskio.html
+  project: mysql
+  covers: "Use a noop or deadline I/O scheduler with native AIO on Linux"
+  last_reviewed: 2026-11-16
+- url: https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html
+  project: mysql
+  covers: open_files_limit (formula 10 + max_connections + table_open_cache*2 = 8161 by default; cannot exceed LimitNOFILE under systemd)
+  last_reviewed: 2026-11-16
