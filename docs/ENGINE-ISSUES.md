@@ -22,3 +22,6 @@
 - [network] Stock 10G+ hosts get 4 medium-risk recs from tuned network-throughput values (rmem/wmem/slow_start/notsent_lowat); consider gating on evidence.
 - [envoy/httpd] No mount table / fstype facts (NFS sendfile advice impossible).
 - [envoy/httpd] No app config parsing; rules gate on host symptoms only (by design for v1).
+- [postgres] Need per-process oom_score_adj fact (/proc/<pid>/oom_score_adj) so oom advice can be ok.
+- [postgres] Document values()/all() expr builtins in rules/README.md.
+- [conflict] app.postgres.overcommit_memory=2 vs app.redis.overcommit_memory=1 on the same host: reconciliation must warn loudly, not pick silently.
