@@ -45,6 +45,10 @@ First release. kerneltuner is a Linux kernel tuning advisor and an observe-only 
 - The only network access is the opt-in `sources --check`, which sends no host data.
 - Vulnerabilities are reported through GitHub private vulnerability reporting; see `SECURITY.md`.
 
+### Notes
+
+- `apply` refuses to write through symlinked `/etc/sysctl.d`, `/etc/systemd/system/*.d` or `/var/lib/kerneltuner` (e.g. some NixOS/image layouts); this is deliberate.
+
 ### Known limitations
 
 - Rules are sourced from documentation, not benchmarks.
