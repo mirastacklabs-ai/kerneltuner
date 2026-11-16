@@ -1,0 +1,30 @@
+- id: ai.amd.roce_mtu
+  title: RoCE interface MTU below 9000
+  kind: report
+  param: mtu
+  domain: ai
+  foreach: rdma
+  applies:
+    when: 'accelCount("amd") > 0'
+  detect: 'any(facts.NICs, {.MTU > 0 and .MTU < 9000 and contains(map(filter(item.Ports, {.LinkLayer == "Ethernet"}), {.NetDev}), .Name)})'
+  risk: medium
+  rationale: >-
+    MTU 1500 is the Linux default and also applies to RoCE interfaces. AMD says it limits RCCL/RDMA performance
+    because of aggressive segmentation (ib_write_bw fails with "Completion with error" on messages above the MTU),
+    and recommends 9000 on the host, which covers RDMA jumbo frames (4096) and TCP jumbo frames (9000), with
+    the switch MTU at its maximum. Matters for multi-node RCCL only.
+  advice: >-
+    Set MTU 9000 on the RoCE netdevs (ip link set dev <if> mtu 9000, persisted in your network config) and
+    make sure every switch port on the path allows at least 9000.
+  verify: "ib_write_bw -a runs clean for sizes above 1500; ip link shows mtu 9000"
+  sources:
+    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+  tests:
+    - fixture: ai-amd-roce-mtu1500
+      expect: { status: firing, target: mlx5_0 }
+    - fixture: ai-amd-roce-mtu1500
+      expect: { status: ok, target: mlx5_1 }
+    - fixture: ai-amd-tuned
+      expect: { status: ok, target: mlx5_0 }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }

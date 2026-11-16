@@ -1,0 +1,30 @@
+- id: ai.amd.numa_balancing
+  title: Disable automatic NUMA balancing on ROCm hosts
+  kind: sysctl
+  param: kernel.numa_balancing
+  domain: ai
+  applies:
+    when: 'accelCount("amd") > 0'
+  recommend: "0"
+  compare: eq
+  namespaced: false
+  risk: low
+  rationale: >-
+    AMD says NUMA auto-balancing must be off on MI300-series nodes to reduce performance variability, and its
+    cluster troubleshooting guide lists it for RCCL hangs. The kernel's page-fault-driven NUMA balancing
+    (kernel.numa_balancing) is on by default on many distro kernels. Persist via sysctl.d, or with
+    numa_balancing=0 on the cmdline as AMD suggests.
+  advice: "Runtime: sysctl -w kernel.numa_balancing=0. Persist in /etc/sysctl.d/ (or numa_balancing=0 on the kernel cmdline)."
+  verify: "cat /proc/sys/kernel/numa_balancing prints 0"
+  sources:
+    - https://rocm.docs.amd.com/en/docs-7.0.0/how-to/rocm-for-ai/inference-optimization/workload.html
+    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+    - https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+    - https://docs.kernel.org/admin-guide/sysctl/kernel.html
+  tests:
+    - fixture: gpu-8xmi300x
+      expect: { status: recommend, proposed: "0" }
+    - fixture: ai-amd-tuned
+      expect: { status: ok }
+    - fixture: gaudi3-8x
+      expect: { status: not-applicable }

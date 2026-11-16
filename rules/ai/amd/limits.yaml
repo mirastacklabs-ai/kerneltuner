@@ -1,0 +1,57 @@
+- id: ai.amd.memlock
+  title: Unlimited locked memory for ROCm/RCCL services
+  kind: limit
+  param: LimitMEMLOCK
+  domain: ai
+  foreach: app
+  filter: 'item.Name in ["vllm", "sglang", "tgi", "triton", "pytorch", "ollama", "llama.cpp"]'
+  applies:
+    when: 'accelCount("amd") > 0'
+  recommend: '"infinity"'
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    RCCL and other HPC apps need significant pinned memory per process; AMD lists a too-small default memlock
+    as a cause of ib_write_bw "failed to create QP", RCCL hangs/segfaults and hipMalloc failures, and prescribes
+    memlock unlimited. Systemd services ignore limits.conf, so set LimitMEMLOCK in the unit.
+  advice: "Set LimitMEMLOCK=infinity in the service unit (or memlock unlimited in /etc/security/limits.conf for login sessions)."
+  verify: "grep 'locked memory' /proc/<pid>/limits shows unlimited"
+  sources:
+    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+  tests:
+    - fixture: ai-amd-low-limits
+      expect: { status: recommend, proposed: infinity, target: sglang.service }
+    - fixture: gpu-8xmi300x
+      expect: { status: ok }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+
+- id: ai.amd.nofile
+  title: Open-file limit 1048576 for ROCm/RCCL services
+  kind: limit
+  param: LimitNOFILE
+  domain: ai
+  foreach: app
+  filter: 'item.Name in ["vllm", "sglang", "tgi", "triton", "pytorch", "ollama", "llama.cpp"]'
+  applies:
+    when: 'accelCount("amd") > 0'
+  recommend: "1048576"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    RCCL opens many files; AMD's troubleshooting guide lists a small nofile default as a cause of RCCL test
+    hangs and segfaults and recommends nofile 1048576 (soft and hard). 1048576 is AMD's number, not derived.
+    Systemd services ignore limits.conf, so set LimitNOFILE in the unit.
+  advice: "Set LimitNOFILE=1048576 in the service unit (or nofile 1048576 in /etc/security/limits.conf for login sessions)."
+  verify: "grep 'open files' /proc/<pid>/limits shows 1048576"
+  sources:
+    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+  tests:
+    - fixture: ai-amd-low-limits
+      expect: { status: recommend, proposed: "1048576", target: sglang.service }
+    - fixture: gpu-8xmi300x
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

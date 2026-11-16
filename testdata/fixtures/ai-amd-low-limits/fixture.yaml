@@ -1,0 +1,5 @@
+description: "gpu-8xmi300x where the SGLang service runs with default limits (nofile 1024, memlock 8 MiB)"
+synthetic: true
+extends: gpu-8xmi300x
+files:
+  "proc/3310/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax data size             unlimited            unlimited            bytes\nMax stack size            8388608              unlimited            bytes\nMax core file size        0                    unlimited            bytes\nMax resident set          unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                 524288               files     \nMax locked memory         8388608              8388608              bytes     \nMax address space         unlimited            unlimited            bytes\n"
