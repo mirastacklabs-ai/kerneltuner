@@ -115,3 +115,46 @@ func TestSanitizeMounts(t *testing.T) {
 		t.Errorf("sanitized:\n%s", out)
 	}
 }
+
+func TestCheckoutFixturesNoUpwardWalk(t *testing.T) {
+	co := t.TempDir()
+	for _, d := range []string{"rules", filepath.Join("testdata", "fixtures"), "sub"} {
+		if err := os.MkdirAll(filepath.Join(co, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := filepath.Join(co, "testdata", "fixtures")
+	if got := checkoutFixtures("", co); got != want {
+		t.Errorf("cwd checkout = %q, want %q", got, want)
+	}
+	if got := checkoutFixtures(filepath.Join(co, "rules"), t.TempDir()); got != want {
+		t.Errorf("rules-dir parent = %q, want %q", got, want)
+	}
+	// A subdirectory of a checkout must not find the checkout above it.
+	if got := checkoutFixtures("", filepath.Join(co, "sub")); got != "" {
+		t.Errorf("subdir found %q", got)
+	}
+	// testdata without rules/ is not a checkout.
+	bare := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(bare, "testdata", "fixtures"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkoutFixtures("", bare); got != "" {
+		t.Errorf("no rules/: found %q", got)
+	}
+}
+
+func TestValidateMissingFixturesIsError(t *testing.T) {
+	old := fixturesDirFn
+	fixturesDirFn = func() (string, error) { return "", os.ErrNotExist }
+	defer func() { fixturesDirFn = old }()
+	t.Chdir(t.TempDir()) // not a checkout
+
+	packs := t.TempDir()
+	if _, err := resolveFixtures(&globalOpts{RulesDir: packs}, false); err == nil || !strings.Contains(err.Error(), "--skip-golden") || !strings.Contains(err.Error(), "--fixtures-dir") {
+		t.Errorf("resolveFixtures err = %v", err)
+	}
+	if d, err := resolveFixtures(&globalOpts{RulesDir: packs}, true); err != nil || d != "" {
+		t.Errorf("skip: %q %v", d, err)
+	}
+}
