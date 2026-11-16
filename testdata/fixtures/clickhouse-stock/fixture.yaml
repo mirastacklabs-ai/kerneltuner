@@ -1,0 +1,20 @@
+description: "clickhouse-server under systemd: THP always, powersave governor, nofile 1024, HDD on scheduler none, overcommit 0"
+synthetic: true
+extends: base-linux
+files:
+  "proc/4100/cgroup": "0::/system.slice/clickhouse-server.service\n"
+  "proc/4100/cmdline": "/usr/bin/clickhouse-server\u0000--config=/etc/clickhouse-server/config.xml\u0000"
+  "proc/4100/comm": "clickhouse-serv\n"
+  "proc/4100/fd/0": ""
+  "proc/4100/fd/1": ""
+  "proc/4100/fd/2": ""
+  "proc/4100/fd/3": ""
+  "proc/4100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                 1024                 files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "sys/block/sda/queue/nr_requests": "256\n"
+  "sys/block/sda/queue/read_ahead_kb": "128\n"
+  "sys/block/sda/queue/rotational": "1\n"
+  "sys/block/sda/queue/scheduler": "[none] mq-deadline kyber bfq\n"
+  "sys/devices/system/cpu/cpu0/cpufreq/scaling_driver": "intel_pstate\n"
+  "sys/devices/system/cpu/cpu0/cpufreq/scaling_governor": "powersave\n"
+  "sys/kernel/mm/transparent_hugepage/defrag": "always defer defer+madvise [madvise] never\n"
+  "sys/kernel/mm/transparent_hugepage/enabled": "[always] madvise never\n"

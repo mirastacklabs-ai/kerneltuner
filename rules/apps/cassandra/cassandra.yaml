@@ -1,0 +1,174 @@
+- id: app.cassandra.max_map_count
+  title: vm.max_map_count for Cassandra
+  kind: sysctl
+  param: vm.max_map_count
+  domain: memory
+  applies:
+    when: 'hasApp("cassandra")'
+  recommend: "1048575"
+  compare: gte
+  namespaced: false
+  risk: low
+  rationale: >-
+    The Cassandra Debian package installs /etc/sysctl.d/cassandra.conf with `vm.max_map_count = 1048575`, and its
+    postinst tells operators who cannot set it (OpenVZ guests) to set 1048575 on the host. The kernel default is 65530
+    and the limit caps the memory map areas one process may have. The Cassandra files do not say why the value was
+    chosen. Risk: a higher limit only allows more mappings per process.
+  verify: "sysctl vm.max_map_count prints at least 1048575"
+  sources:
+    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra-sysctl.conf
+    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.postinst
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+  tests:
+    - fixture: cassandra-stock
+      expect: { status: recommend, proposed: "1048575" }
+    - fixture: cassandra-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.cassandra.tcp_keepalive_time
+  title: net.ipv4.tcp_keepalive_time for Cassandra
+  kind: sysctl
+  param: net.ipv4.tcp_keepalive_time
+  domain: network
+  applies:
+    when: 'hasApp("cassandra")'
+  recommend: "300"
+  compare: lte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The Cassandra Debian package ships `net.ipv4.tcp_keepalive_time=300` in /etc/sysctl.d/cassandra.conf. The kernel
+    default is 2 hours, so an idle connection to a dead peer lingers far longer than with 300 seconds. The shipped file
+    carries no comment explaining the choice, so the effect described is the kernel's keepalive semantics, not a
+    Cassandra statement. Risk: more keepalive probes on idle connections; the value matters only for sockets that
+    enable SO_KEEPALIVE.
+  verify: "sysctl net.ipv4.tcp_keepalive_time prints 300 or less"
+  sources:
+    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra-sysctl.conf
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: cassandra-stock
+      expect: { status: recommend, proposed: "300" }
+    - fixture: cassandra-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.cassandra.nofile
+  title: Cassandra open-files limit below the packaged value
+  kind: limit
+  param: LimitNOFILE
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "cassandra"'
+  recommend: "max(current, 100000)"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    Both Cassandra packages ship a limits file (debian/cassandra.conf, redhat/cassandra.conf) with `cassandra - nofile 100000`.
+    The soft limit shown is the one the running process has, so a lower value means the packaged limit was not applied
+    (for example a systemd unit that ignores limits.d). The Cassandra files do not explain the number; the failure mode
+    of a low limit is the usual "too many open files" on SSTables and client sockets.
+  verify: "grep 'open files' /proc/<cassandra pid>/limits shows at least 100000"
+  sources:
+    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.conf
+    - https://raw.githubusercontent.com/apache/cassandra/trunk/redhat/cassandra.conf
+  tests:
+    - fixture: cassandra-stock
+      expect: { status: recommend, proposed: "100000", target: cassandra.service }
+    - fixture: cassandra-tuned
+      expect: { status: ok, target: cassandra.service }
+
+- id: app.cassandra.memlock
+  title: Cassandra locked-memory limit below the packaged value
+  kind: limit
+  param: LimitMEMLOCK
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "cassandra"'
+  recommend: '"infinity"'
+  compare: gte
+  namespaced: false
+  risk: low
+  rationale: >-
+    Both Cassandra packages ship `cassandra - memlock unlimited` in their limits.d file. The soft RLIMIT_MEMLOCK shown
+    is what the running process got, so a small value means the packaged limit is not in effect. The package files give
+    no reason for the setting. Risk: an unlimited memlock lets the process pin as much RAM as it asks for.
+  verify: "grep 'locked memory' /proc/<cassandra pid>/limits shows unlimited"
+  sources:
+    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.conf
+    - https://raw.githubusercontent.com/apache/cassandra/trunk/redhat/cassandra.conf
+  tests:
+    - fixture: cassandra-stock
+      expect: { status: recommend, proposed: infinity, target: cassandra.service }
+    - fixture: cassandra-tuned
+      expect: { status: ok, target: cassandra.service }
+
+- id: app.cassandra.read_ahead
+  title: Block read-ahead for Cassandra data disks
+  kind: sysfs
+  param: /sys/block/{item}/queue/read_ahead_kb
+  domain: storage
+  foreach: block
+  applies:
+    when: 'hasApp("cassandra")'
+  recommend: "item.Rotational ? 64 : 4"
+  compare: lte
+  namespaced: false
+  risk: medium
+  rationale: >-
+    The Cassandra production guide says read ahead is not useful on SSDs or for small partitions, can increase disk
+    usage, and "in some cases result in as much as a 5x latency and throughput performance penalty" for read-heavy
+    key/value tables with rows under 1KB. Its initial recommendation is 64KB for spinning disks and 4KB for SSDs, to be
+    tuned against your SLA. The rule cannot tell which block devices hold data_file_directories, so it reports every
+    non-virtual disk; ignore devices that do not hold Cassandra data. Risk: a smaller window slows large sequential
+    reads such as compaction streams on some workloads.
+  advice: >-
+    `echo {{.proposed}} | sudo tee /sys/block/{{.target}}/queue/read_ahead_kb` (the guide's `blockdev --setra 8` is
+    4KB in 512-byte sectors). Persist with a udev rule or the tuned disk plugin, then compare latency.
+  verify: "cat /sys/block/<disk>/queue/read_ahead_kb prints 4 (SSD) or 64 (HDD) or less; read latency does not regress"
+  sources:
+    - https://cassandra.apache.org/doc/latest/cassandra/getting-started/production.html
+  tests:
+    - fixture: cassandra-stock
+      expect: { status: recommend, proposed: "4", target: nvme0n1 }
+    - fixture: cassandra-stock
+      expect: { status: recommend, proposed: "64", target: sda }
+    - fixture: cassandra-tuned
+      expect: { status: ok, target: nvme0n1 }
+    - fixture: cassandra-tuned
+      expect: { status: ok, target: sda }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.cassandra.swap
+  title: Swap enabled on a Cassandra host
+  kind: report
+  param: swap
+  domain: memory
+  applies:
+    when: 'hasApp("cassandra")'
+  detect: "facts.Memory.SwapTotalBytes > 0"
+  risk: low
+  rationale: >-
+    The comment on row_cache_size in the cassandra.yaml that ships with Cassandra says "Do not specify more memory
+    that the system can afford in the worst usual situation and leave some headroom for OS block level cache. Do never
+    allow your system to swap." The statement sits in the row-cache section, and the production guide has no swap
+    section, so this is a prompt to check rather than a measured rule. Risk: removing swap leaves the OOM killer as
+    the only response to memory exhaustion.
+  advice: >-
+    Swap is enabled ({{.facts.Memory.SwapTotalBytes}} bytes). If the node can run out of memory, size heap, off-heap
+    and row cache so it does not; consider `swapoff -a` and removing the swap entries from /etc/fstab.
+  verify: "swapon --show prints nothing, or free -m shows no swap in use under load"
+  sources:
+    - https://raw.githubusercontent.com/apache/cassandra/trunk/conf/cassandra.yaml
+  tests:
+    - fixture: cassandra-stock
+      expect: { status: firing }
+    - fixture: cassandra-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

@@ -1,0 +1,18 @@
+description: "2-socket memcached host on a pre-5.4 style somaxconn 128 with swap on"
+synthetic: true
+extends: base-linux
+files:
+  "proc/7100/cgroup": "0::/system.slice/memcached.service\n"
+  "proc/7100/cmdline": "/usr/bin/memcached\u0000-p\u000011211\u0000-u\u0000memcache\u0000-m\u00001024\u0000-c\u00001024\u0000"
+  "proc/7100/comm": "memcached\n"
+  "proc/7100/fd/0": ""
+  "proc/7100/fd/1": ""
+  "proc/7100/fd/2": ""
+  "proc/7100/fd/3": ""
+  "proc/7100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                 1024                 files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/meminfo": "MemTotal:       65536000 kB\nMemFree:        45875200 kB\nMemAvailable:   52428800 kB\nSwapTotal:      8388604 kB\nSwapFree:       8388604 kB\nHugepagesize:       2048 kB\n"
+  "proc/sys/net/core/somaxconn": "128\n"
+  "sys/devices/system/node/node0/cpulist": "0-7\n"
+  "sys/devices/system/node/node0/meminfo": "Node 0 MemTotal:       32768000 kB\n"
+  "sys/devices/system/node/node1/cpulist": "8-15\n"
+  "sys/devices/system/node/node1/meminfo": "Node 1 MemTotal:       32768000 kB\n"

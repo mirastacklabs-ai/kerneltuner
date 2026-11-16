@@ -1,0 +1,20 @@
+- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/vm-max-map-count.html
+  project: elasticsearch
+  covers: "vm.max_map_count 1048576"
+  last_reviewed: 2026-11-16
+- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-configuration-memory.html
+  project: elasticsearch
+  covers: "disable swap, vm.swappiness=1, mlockall"
+  last_reviewed: 2026-11-16
+- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/file-descriptors.html
+  project: elasticsearch
+  covers: "file descriptor limit 65535"
+  last_reviewed: 2026-11-16
+- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/max-number-of-threads.html
+  project: elasticsearch
+  covers: "thread limit at least 4096 (no rule: no nproc limit kind)"
+  last_reviewed: 2026-11-16
+- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/system-config-tcpretries.html
+  project: elasticsearch
+  covers: "net.ipv4.tcp_retries2=5"
+  last_reviewed: 2026-11-16

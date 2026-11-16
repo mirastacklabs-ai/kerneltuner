@@ -1,0 +1,8 @@
+- url: https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/
+  project: opensearch
+  covers: "important settings: vm.max_map_count 262144, nofile 65536, memory_lock"
+  last_reviewed: 2026-11-16
+- url: https://opensearch.org/docs/latest/install-and-configure/install-opensearch/tar/
+  project: opensearch
+  covers: "swapoff -a step in tarball install"
+  last_reviewed: 2026-11-16

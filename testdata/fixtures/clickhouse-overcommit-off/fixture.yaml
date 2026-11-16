@@ -1,0 +1,5 @@
+description: "clickhouse-stock with vm.overcommit_memory=2 (never overcommit)"
+synthetic: true
+extends: clickhouse-stock
+files:
+  "proc/sys/vm/overcommit_memory": "2\n"
