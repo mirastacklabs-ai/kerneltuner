@@ -1,0 +1,5 @@
+description: "container-k8s-redis with RLIMIT_NOFILE 1024 (below the 10032 needed by maxclients 10000)"
+synthetic: true
+extends: container-k8s-redis
+files:
+  "proc/1/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                 1048576              files     \nMax locked memory         8388608              8388608              bytes     \n"

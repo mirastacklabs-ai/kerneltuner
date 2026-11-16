@@ -1,0 +1,5 @@
+description: "web-16c-64g-nginx with fs.nr_open lowered to 65536"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "proc/sys/fs/nr_open": "65536\n"

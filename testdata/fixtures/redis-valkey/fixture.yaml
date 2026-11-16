@@ -1,0 +1,7 @@
+description: "Bare-metal Valkey under systemd (valkey-server) with stock overcommit_memory=0 and THP always"
+synthetic: true
+extends: redis-bare-metal
+files:
+  "proc/2210/cgroup": "0::/system.slice/valkey-server.service\n"
+  "proc/2210/cmdline": "/usr/bin/valkey-server\u0000127.0.0.1:6379\u0000"
+  "proc/2210/comm": "valkey-server\n"

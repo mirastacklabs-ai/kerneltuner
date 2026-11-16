@@ -1,0 +1,7 @@
+description: "web-16c-64g-nginx with the accept queue overflowing (somaxconn 4096, ListenOverflows 12.5/s)"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+rates:
+  TcpExt.ListenOverflows: 12.5
+  TcpExt.ListenDrops: 12.5

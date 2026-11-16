@@ -1,0 +1,112 @@
+- id: app.redis.tcp_backlog
+  title: Redis tcp-backlog vs net.core.somaxconn
+  kind: runtime
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: "(hasApp(\"redis\") || hasApp(\"valkey\")) && sysctlNum(\"net.core.somaxconn\") > 0 && sysctlNum(\"net.core.somaxconn\") < 511"
+  advice: >-
+    redis.conf sets `tcp-backlog 511` and the kernel silently truncates it to net.core.somaxconn, which is below 511 on this host. Raise both net.core.somaxconn and net.ipv4.tcp_max_syn_backlog (as redis.conf says) to at least 511, or higher together with `tcp-backlog` if clients connect in large bursts.
+  verify: "sysctl net.core.somaxconn prints at least 511; TcpExt.ListenOverflows rate stays 0"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The accept queue is capped at net.core.somaxconn, which was 128 before Linux 5.4 and is 4096 since (kernel 5.4 commit 19f92a030ca6). On 5.4+ with the default Redis's 511 fits and the rule is not-applicable; it fires on older kernels or hosts where somaxconn was lowered. net.core.somaxconn is per-network-namespace, so inside a container it may be set per pod.
+  sources:
+    - https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
+    - https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: redis-small-somaxconn
+      expect: { status: recommend }
+    - fixture: container-k8s-redis
+      expect: { status: not-applicable }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+
+- id: app.redis.overcommit_memory
+  title: vm.overcommit_memory=1 for Redis background saves
+  kind: sysctl
+  param: vm.overcommit_memory
+  domain: memory
+  applies:
+    when: "(hasApp(\"redis\") || hasApp(\"valkey\"))"
+  recommend: "1"
+  compare: eq
+  namespaced: false
+  risk: medium
+  rationale: >-
+    Redis (and Valkey, whose admin guide is identical) documents that vm.overcommit_memory must be 1 so the fork() used for background saves (RDB/AOF rewrite) is not refused by the heuristic overcommit check when the dataset is large relative to free memory; without it BGSAVE can fail with a fork() error. The Redis guidance is not tied to a kernel version. Risk: mode 1 never refuses an allocation, so a memory-starved host relies on the OOM killer instead of failing allocations; size maxmemory and keep swap or headroom.
+  verify: "sysctl vm.overcommit_memory prints 1; BGSAVE completes without a fork() error in the Redis log"
+  sources:
+    - https://redis.io/docs/latest/operate/oss_and_stack/management/admin/
+    - https://valkey.io/topics/admin/
+  tests:
+    - fixture: redis-bare-metal
+      expect: { status: recommend, proposed: "1" }
+    - fixture: redis-valkey
+      expect: { status: recommend, proposed: "1" }
+    - fixture: redis-tuned
+      expect: { status: ok }
+    - fixture: container-k8s-redis
+      expect: { status: host-only }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.redis.transparent_hugepage
+  title: Transparent Huge Pages with Redis
+  kind: sysfs
+  param: /sys/kernel/mm/transparent_hugepage/enabled
+  domain: memory
+  applies:
+    when: "(hasApp(\"redis\") || hasApp(\"valkey\"))"
+  recommend: "current == \"madvise\" ? \"madvise\" : \"never\""
+  compare: eq
+  namespaced: false
+  risk: medium
+  rationale: >-
+    The Redis admin guide says to run `echo never > /sys/kernel/mm/transparent_hugepage/enabled` so THP does not hurt Redis memory use and latency (huge pages inflate copy-on-write during fork). redis.conf notes that with the kernel set to madvise or never its `disable-thp yes` has no effect because there is nothing to disable, and that with `always` Redis tries to disable THP for its own process; so only `always` is flagged and madvise is accepted. Risk: the setting is system-wide and may hurt other workloads (databases or JVMs that benefit from THP).
+  verify: "cat /sys/kernel/mm/transparent_hugepage/enabled shows [never] or [madvise]; the latency monitor shows no fork spikes"
+  sources:
+    - https://redis.io/docs/latest/operate/oss_and_stack/management/admin/
+    - https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
+    - https://valkey.io/topics/admin/
+    - https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+  tests:
+    - fixture: redis-bare-metal
+      expect: { status: recommend, proposed: "never" }
+    - fixture: redis-valkey
+      expect: { status: recommend, proposed: "never" }
+    - fixture: redis-tuned
+      expect: { status: ok }
+    - fixture: container-k8s-redis
+      expect: { status: host-only }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.redis.nofile_maxclients
+  title: Redis open-files limit below what maxclients needs
+  kind: limit
+  param: LimitNOFILE
+  domain: limits
+  foreach: app
+  filter: "item.Name == \"redis\" || item.Name == \"valkey\""
+  recommend: "max(current, 10032)"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    redis.conf documents maxclients 10000 by default and says that if Redis cannot set the process file limit high enough it lowers maxclients to the current file limit minus 32 (fds Redis reserves for internal use), after which new connections get 'max number of clients reached'. 10000 + 32 = 10032 is therefore the minimum soft limit for the default; raise it further if maxclients is set higher or Redis Cluster is used (the cluster bus uses two connections per node). The soft limit shown is what Redis is actually running with, so a value below 10032 means Redis could not raise it (usually a low hard limit).
+  verify: "cat /proc/<redis pid>/limits shows Max open files >= 10032, and Redis accepts up to maxclients connections"
+  sources:
+    - https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
+    - https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+  tests:
+    - fixture: redis-low-nofile
+      expect: { status: recommend, proposed: "10032", target: redis }
+    - fixture: container-k8s-redis
+      expect: { status: ok, target: redis }
+    - fixture: redis-bare-metal
+      expect: { status: ok, target: redis-server.service }
+    - fixture: redis-valkey
+      expect: { status: ok, target: valkey-server.service }

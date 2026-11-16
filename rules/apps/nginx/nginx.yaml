@@ -1,0 +1,53 @@
+- id: app.nginx.worker_rlimit_nofile
+  title: nginx workers still at the default open-files limit
+  kind: runtime
+  param: worker_rlimit_nofile
+  domain: limits
+  applies:
+    when: "hasApp(\"nginx\") && any(facts.Procs, {.Comm == \"nginx\" && any(.Cmdline, {# contains \"worker process\"}) && .NoFileSoft <= 1024})"
+  advice: >-
+    nginx worker processes run with RLIMIT_NOFILE soft 1024. nginx documents that the number of simultaneous connections per worker (worker_connections, default 512, counting upstream connections too) cannot exceed the open-files limit. Raise the limit for the workers with `worker_rlimit_nofile <n>;` in the main context of nginx.conf (no restart of the master needed), and/or set LimitNOFILE= in the nginx systemd unit. Choose <n> above worker_connections (worker_connections counts upstream connections as well as client ones). The hard limit and fs.nr_open must be at least <n>.
+  verify: "cat /proc/<worker pid>/limits shows the new Max open files; no 'Too many open files' errors in the nginx error log"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The default soft RLIMIT_NOFILE is 1024 (systemd keeps it there for select() compatibility and raises only the hard limit), and nginx documents that worker_connections cannot exceed the open-files limit. The rule fires only while nginx workers are still at or below 1024; once worker_rlimit_nofile (or LimitNOFILE) raised them it is not-applicable. The nginx config is not parsed, so whether 1024 is actually too low depends on worker_connections.
+  sources:
+    - https://nginx.org/en/docs/ngx_core_module.html#worker_rlimit_nofile
+    - https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+  tests:
+    - fixture: web-16c-64g-nginx
+      expect: { status: recommend }
+    - fixture: nginx-raised-nofile
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.nginx.listen_backlog
+  title: nginx listen backlog vs net.core.somaxconn
+  kind: runtime
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: "hasApp(\"nginx\") && (sysctlNum(\"net.core.somaxconn\") > 0 && sysctlNum(\"net.core.somaxconn\") < 511 || rate(\"TcpExt.ListenOverflows\") > 0)"
+  evidence:
+    - metric: TcpExt.ListenOverflows
+      rate_gt: 0
+  advice: >-
+    The accept queue of a listening socket is min(listen backlog, net.core.somaxconn). nginx's default backlog on Linux is 511, so a somaxconn below 511 (the default was 128 before Linux 5.4) silently truncates it; raise net.core.somaxconn (and net.ipv4.tcp_max_syn_backlog) to at least 511. If somaxconn is already large and ListenOverflows still rises, set backlog=<n> explicitly on the nginx `listen` directive (it is not auto-sized) and make sure the workers are not saturated, since a deeper queue only hides slow accept().
+  verify: "TcpExt.ListenOverflows rate stays 0 (nstat -az TcpExtListenOverflows); ss -ltn shows Send-Q equal to the intended backlog for nginx's listeners"
+  namespaced: true
+  risk: low
+  rationale: >-
+    Linux caps listen() backlog at net.core.somaxconn, which was 128 before kernel 5.4 and 4096 since (commit 19f92a030ca6), while nginx asks for 511 by default; on older kernels nginx's backlog is therefore cut to 128. On 5.4+ the cap is no longer the limit unless someone lowered it, so the rule then fires only on observed ListenOverflows. Deeper queues add latency under overload.
+  sources:
+    - https://nginx.org/en/docs/http/ngx_http_core_module.html#listen
+    - https://docs.kernel.org/networking/ip-sysctl.html
+    - https://kernelnewbies.org/Linux_5.4
+  tests:
+    - fixture: nginx-small-somaxconn
+      expect: { status: recommend }
+    - fixture: nginx-listen-overflow
+      expect: { status: recommend }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }

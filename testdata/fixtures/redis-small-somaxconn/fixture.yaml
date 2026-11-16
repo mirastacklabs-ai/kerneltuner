@@ -1,0 +1,5 @@
+description: "container-k8s-redis with the old somaxconn default of 128"
+synthetic: true
+extends: container-k8s-redis
+files:
+  "proc/sys/net/core/somaxconn": "128\n"

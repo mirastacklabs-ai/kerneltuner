@@ -1,0 +1,6 @@
+description: "redis-bare-metal after following the Redis admin guide: overcommit_memory=1, THP never"
+synthetic: true
+extends: redis-bare-metal
+files:
+  "proc/sys/vm/overcommit_memory": "1\n"
+  "sys/kernel/mm/transparent_hugepage/enabled": "always madvise [never]\n"

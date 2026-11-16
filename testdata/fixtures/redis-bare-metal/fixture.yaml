@@ -1,0 +1,17 @@
+description: "Bare-metal Redis under systemd on kernel 5.15 with stock vm.overcommit_memory=0 and THP always"
+synthetic: true
+extends: base-linux
+files:
+  "proc/2210/cgroup": "0::/system.slice/redis-server.service\n"
+  "proc/2210/cmdline": "/usr/bin/redis-server\u0000127.0.0.1:6379\u0000"
+  "proc/2210/comm": "redis-server\n"
+  "proc/2210/fd/0": ""
+  "proc/2210/fd/1": ""
+  "proc/2210/fd/2": ""
+  "proc/2210/fd/3": ""
+  "proc/2210/fd/4": ""
+  "proc/2210/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            65535                65535                files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/net/tcp": "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n   0: 0100007F:18EB 00000000:0000 0A 00000000:00000000 00:00000000 00000000   110        0 20010 1 0000000000000000 100 0 0 10 0\n"
+  "proc/net/tcp6": "  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+  "sys/kernel/mm/transparent_hugepage/defrag": "always defer defer+madvise [madvise] never\n"
+  "sys/kernel/mm/transparent_hugepage/enabled": "[always] madvise never\n"

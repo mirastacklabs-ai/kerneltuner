@@ -1,0 +1,16 @@
+- url: https://nginx.org/en/docs/ngx_core_module.html#worker_rlimit_nofile
+  project: nginx
+  covers: worker_rlimit_nofile, worker_connections vs the open-files limit
+  last_reviewed: 2026-11-16
+- url: https://nginx.org/en/docs/http/ngx_http_core_module.html#listen
+  project: nginx
+  covers: listen backlog= default (511 on Linux)
+  last_reviewed: 2026-11-16
+- url: https://docs.kernel.org/networking/ip-sysctl.html
+  project: linux
+  covers: net.core.somaxconn default (4096 since 5.4, 128 before), listen backlog cap
+  last_reviewed: 2026-11-16
+- url: https://kernelnewbies.org/Linux_5.4
+  project: linux
+  covers: SOMAXCONN raised from 128 to 4096 in 5.4
+  last_reviewed: 2026-11-16

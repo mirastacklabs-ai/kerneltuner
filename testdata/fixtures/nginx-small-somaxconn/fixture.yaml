@@ -1,0 +1,6 @@
+description: "web-16c-64g-nginx on a Debian 10 kernel 4.19 with the old somaxconn default of 128"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "proc/sys/kernel/osrelease": "4.19.0-25-amd64\n"
+  "proc/sys/net/core/somaxconn": "128\n"
