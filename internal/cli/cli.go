@@ -2,9 +2,6 @@
 package cli
 
 import (
-	"errors"
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
@@ -16,8 +13,6 @@ var (
 	GitCommit = "unknown"
 	BuildDate = "unknown"
 )
-
-var errNotImplemented = errors.New("not implemented yet")
 
 // globalOpts holds the persistent flags shared by every subcommand.
 type globalOpts struct {
@@ -65,9 +60,4 @@ func NewRootCmd() *cobra.Command {
 		newVersionCmd(g),
 	)
 	return root
-}
-
-// notImplemented is the RunE body of every stub subcommand.
-func notImplemented(cmd *cobra.Command, _ []string) error {
-	return fmt.Errorf("%s: %w", cmd.Name(), errNotImplemented)
 }
