@@ -99,14 +99,57 @@ func TestGenerateCommentsCarryQuotes(t *testing.T) {
 	}
 }
 
-func TestValidateStrictCitations(t *testing.T) {
-	out, errOut, err := run(t, "validate")
-	if err != nil || !strings.Contains(out, "OK: 2 rules") || !strings.Contains(errOut, "warning: 1 of 2 rules (1 of 2 sources) cite no verbatim quote") {
-		t.Errorf("default: %v\nout=%s\nerr=%s", err, out, errOut)
+func TestValidateStrictCitationsIsDefault(t *testing.T) {
+	out, _, err := run(t, "validate")
+	if ExitCode(err) != 1 || !strings.Contains(out, "test.runtime: 1 of 1 source(s) have no quote") {
+		t.Errorf("default: %v\n%s", err, out)
 	}
+	// the old flag is still accepted and changes nothing
 	out, _, err = run(t, "validate", "--strict-citations")
 	if ExitCode(err) != 1 || !strings.Contains(out, "test.runtime: 1 of 1 source(s) have no quote") {
-		t.Errorf("strict: %v\n%s", err, out)
+		t.Errorf("flag: %v\n%s", err, out)
+	}
+}
+
+// twoPacks writes kernel/good (quoted rule) and kernel/bad (quote-less rule).
+func twoPacks(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	mk := func(pack, id, src string) {
+		d := filepath.Join(dir, "kernel", pack)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		rule := "- id: " + id + "\n  title: T\n  kind: runtime\n  domain: network\n  advice: a\n  risk: low\n  sources:\n    - " + src +
+			"\n  tests: [{fixture: minimal, expect: {status: recommend}}]\n"
+		reg := "- {url: https://example.com/" + pack + ", project: p, last_reviewed: \"2026-01-01\"}\n"
+		for n, b := range map[string]string{"r.yaml": rule, "sources.yaml": reg} {
+			if err := os.WriteFile(filepath.Join(d, n), []byte(b), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	mk("good", "x.good", "{url: https://example.com/good, quote: \"q\"}")
+	mk("bad", "x.bad", "https://example.com/bad")
+	return dir
+}
+
+func TestValidatePackFiltersProblems(t *testing.T) {
+	dir := twoPacks(t)
+	out, _, err := runIn(t, t.TempDir(), dir, "validate")
+	if ExitCode(err) != 1 || !strings.Contains(out, "x.bad") {
+		t.Fatalf("all packs: %v\n%s", err, out)
+	}
+	out, _, err = runIn(t, t.TempDir(), dir, "--pack", "good", "validate")
+	if err != nil || strings.Contains(out, "x.bad") || !strings.Contains(out, "OK: 1 rules") {
+		t.Errorf("--pack good: %v\n%s", err, out)
+	}
+	out, _, err = runIn(t, t.TempDir(), dir, "--pack", "kernel/bad", "validate")
+	if ExitCode(err) != 1 || strings.Contains(out, "x.good") || !strings.Contains(out, "x.bad") {
+		t.Errorf("--pack kernel/bad: %v\n%s", err, out)
+	}
+	if _, _, err = runIn(t, t.TempDir(), dir, "--pack", "nope", "validate"); err == nil {
+		t.Error("unknown pack accepted")
 	}
 }
 
@@ -212,3 +255,32 @@ func TestSourcesCheck(t *testing.T) {
 		t.Errorf("good pack: %v\n%s", err, out)
 	}
 }
+
+func TestSourcesCheckSameSiteMoveIsWarning(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/latest/x" {
+			http.Redirect(w, r, "/v3.7/x", http.StatusMovedPermanently)
+			return
+		}
+		_, _ = w.Write([]byte("<p>the quoted words</p>"))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	pack := filepath.Join(dir, "apps/x")
+	if err := os.MkdirAll(pack, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rule := "- id: x.r\n  title: T\n  kind: runtime\n  domain: network\n  advice: a\n  risk: low\n  sources:\n    - {url: " + srv.URL + "/latest/x, quote: \"quoted words\"}\n  tests: [{fixture: minimal, expect: {status: recommend}}]\n"
+	for n, b := range map[string]string{"r.yaml": rule, "sources.yaml": "- {url: " + srv.URL + "/latest/x, project: p}\n"} {
+		if err := os.WriteFile(filepath.Join(pack, n), []byte(b), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, _, err := runIn(t, t.TempDir(), dir, "sources", "--check")
+	if err != nil || !strings.Contains(out, "WARN-MOVED") || !strings.Contains(out, "-> "+srv.URL+"/v3.7/x") || !strings.Contains(out, "1 WARN-MOVED") {
+		t.Errorf("want exit 0 with WARN-MOVED: %v\n%s", err, out)
+	}
+}
+
+// Tests check local http servers; production never allows http.
+func init() { sourcesAllowHTTP = true }

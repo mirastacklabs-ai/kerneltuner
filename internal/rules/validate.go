@@ -253,8 +253,8 @@ type CitationReport struct {
 	Problems            []string // one line per rule with quote-less sources
 }
 
-// CheckCitations reports the rule sources lacking a quote. It is a warning by
-// default; `validate --strict-citations` turns Problems into errors.
+// CheckCitations reports the rule sources lacking a quote. `validate`
+// reports Problems as errors (strict is the default).
 func CheckCitations(rs []Rule) CitationReport {
 	rep := CitationReport{Rules: len(rs)}
 	for _, r := range rs {

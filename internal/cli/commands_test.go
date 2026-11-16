@@ -149,8 +149,8 @@ func TestSources(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	out, _, err := run(t, "validate")
-	if err != nil || !strings.Contains(out, "OK: 2 rules") {
+	out, _, err := runIn(t, t.TempDir(), twoPacks(t), "--pack", "good", "validate")
+	if err != nil || !strings.Contains(out, "OK: 1 rules") {
 		t.Fatalf("validate: %v\n%s", err, out)
 	}
 	// A broken pack fails with a non-zero exit and every problem listed.

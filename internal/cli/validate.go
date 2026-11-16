@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"path"
 
 	"github.com/spf13/cobra"
 
@@ -25,6 +26,18 @@ func newValidateCmd(g *globalOpts) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if g.Pack != "" {
+				var in []rules.Rule
+				for _, r := range rs {
+					if r.Pack == g.Pack || path.Base(r.Pack) == g.Pack {
+						in = append(in, r)
+					}
+				}
+				if len(in) == 0 {
+					return fmt.Errorf("--pack %q: no rules in that pack", g.Pack)
+				}
+				rs = in
+			}
 			out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
 			problems := 0
 			report := func(format string, a ...any) {
@@ -40,15 +53,9 @@ func newValidateCmd(g *globalOpts) *cobra.Command {
 			for _, e := range rules.ValidateWith(rs, srcs, fixturesDir) {
 				report("invalid: %v", e)
 			}
-			cites := rules.CheckCitations(rs)
-			strict, _ := cmd.Flags().GetBool("strict-citations")
-			if strict {
-				for _, pr := range cites.Problems {
-					report("invalid: %s", pr)
-				}
-			} else if cites.RulesWithoutQuotes > 0 {
-				_, _ = fmt.Fprintf(errOut, "warning: %d of %d rules (%d of %d sources) cite no verbatim quote; --strict-citations makes this an error\n",
-					cites.RulesWithoutQuotes, cites.Rules, cites.SourcesWithoutQuote, cites.Sources)
+			// A rule source without a verbatim quote is an error.
+			for _, pr := range rules.CheckCitations(rs).Problems {
+				report("invalid: %s", pr)
 			}
 			tests := 0
 			for _, r := range rs {
@@ -68,6 +75,7 @@ func newValidateCmd(g *globalOpts) *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().Bool("strict-citations", false, "treat rule sources without a verbatim quote as errors")
+	cmd.Flags().Bool("strict-citations", true, "deprecated no-op: a rule source without a verbatim quote is always an error")
+	_ = cmd.Flags().MarkHidden("strict-citations")
 	return cmd
 }
