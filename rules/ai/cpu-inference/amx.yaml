@@ -19,9 +19,15 @@
     AVX-512 paths.
   verify: "kernel >= 5.16 (or a confirmed AMX backport) and amx_tile present in /proc/cpuinfo flags"
   sources:
-    - https://kernelnewbies.org/Linux_5.16
-    - https://docs.kernel.org/arch/x86/xstate.html
-    - https://raw.githubusercontent.com/torvalds/linux/master/arch/x86/include/asm/cpufeatures.h
+    - url: https://kernelnewbies.org/Linux_5.16
+      section: "Add support for AMX instructions"
+      quote: "This release adds support for Intel's Advanced Matrix Extensions (AMX)."
+    - url: https://docs.kernel.org/arch/x86/xstate.html
+      section: "Using XSTATE features in user space applications"
+      quote: "Features like AMX TILE_DATA (XSTATE component 18) are enabled by XCR0 as well, but the first use of related instruction is trapped by the kernel because by default the required large XSTATE buffers are not allocated automatically."
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/arch/x86/include/asm/cpufeatures.h
+      section: "X86_FEATURE_AMX_TILE"
+      quote: "/* \"amx_tile\" AMX tile Support */"
   tests:
     - fixture: cpu-inference-amx-oldkernel
       expect: { status: firing }
@@ -53,9 +59,15 @@
     comes from the oneDNN and OpenVINO documentation.
   verify: "OpenVINO per-layer performance counters list brgemm_avx512_amx execution types; amx_tile still present in /proc/cpuinfo"
   sources:
-    - https://uxlfoundation.github.io/oneDNN/dev_guide_cpu_dispatcher_control.html
-    - https://docs.openvino.ai/2025/openvino-workflow/running-inference/inference-devices-and-modes/cpu-device.html
-    - https://kernelnewbies.org/Linux_5.16
+    - url: https://uxlfoundation.github.io/oneDNN/dev_guide_cpu_dispatcher_control.html
+      section: "ONEDNN_MAX_CPU_ISA: DEFAULT"
+      quote: "No restrictions on the above ISAs, but excludes the below ISAs with preview support in the library (default)"
+    - url: https://docs.openvino.ai/2025/openvino-workflow/running-inference/inference-devices-and-modes/cpu-device.html
+      section: "Floating-Point Data Types Specifics"
+      quote: "bfloat16 and float16 enable Intel® Advanced Matrix Extension (AMX) on 4th-gen and newer generation Intel® Xeon® Scalable Processors"
+    - url: https://kernelnewbies.org/Linux_5.16
+      section: "Add support for AMX instructions"
+      quote: "This release adds support for Intel's Advanced Matrix Extensions (AMX)."
   tests:
     - fixture: pytorch-cpu-amx-2s
       expect: { status: recommend }

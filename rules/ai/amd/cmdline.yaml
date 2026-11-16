@@ -18,8 +18,12 @@
     Add iommu=pt to GRUB_CMDLINE_LINUX in /etc/default/grub, regenerate the bootloader config, reboot.
   verify: "/proc/cmdline contains iommu=pt"
   sources:
-    - https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
-    - https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+    - url: https://instinct.docs.amd.com/projects/system-acceptance/en/latest/gpus/mi300x.html
+      section: "Check kernel boot arguments"
+      quote: "Pass: Contains pci=realloc=off, amd_iommu=on or intel_iommu=on, and iommu=pt"
+    - url: https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+      section: "Update GRUB Settings"
+      quote: "pci=realloc=off iommu=pt"
   tests:
     - fixture: gpu-8xmi300x
       expect: { status: recommend, proposed: pt }
@@ -46,7 +50,9 @@
   advice: Add amd_iommu=on to GRUB_CMDLINE_LINUX, regenerate the bootloader config, reboot.
   verify: "/proc/cmdline contains amd_iommu=on"
   sources:
-    - https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
+    - url: https://instinct.docs.amd.com/projects/system-acceptance/en/latest/gpus/mi300x.html
+      section: "Check kernel boot arguments"
+      quote: "Pass: Contains pci=realloc=off, amd_iommu=on or intel_iommu=on, and iommu=pt"
   tests:
     - fixture: ai-amd-xeon-host
       expect: { status: not-applicable }
@@ -73,7 +79,9 @@
   advice: Add intel_iommu=on to GRUB_CMDLINE_LINUX, regenerate the bootloader config, reboot.
   verify: "/proc/cmdline contains intel_iommu=on"
   sources:
-    - https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
+    - url: https://instinct.docs.amd.com/projects/system-acceptance/en/latest/gpus/mi300x.html
+      section: "Check kernel boot arguments"
+      quote: "Pass: Contains pci=realloc=off, amd_iommu=on or intel_iommu=on, and iommu=pt"
   tests:
     - fixture: ai-amd-xeon-host
       expect: { status: recommend, proposed: "on" }
@@ -99,8 +107,12 @@
   advice: Add pci=realloc=off to GRUB_CMDLINE_LINUX (merge with any existing pci= options), reboot.
   verify: "/proc/cmdline contains realloc=off in its pci= option"
   sources:
-    - https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
-    - https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+    - url: https://instinct.docs.amd.com/projects/system-acceptance/en/latest/gpus/mi300x.html
+      section: "Check kernel boot arguments"
+      quote: "Pass: Contains pci=realloc=off, amd_iommu=on or intel_iommu=on, and iommu=pt"
+    - url: https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+      section: "Update GRUB Settings"
+      quote: "pci=realloc=off iommu=pt"
   tests:
     - fixture: gpu-8xmi300x
       expect: { status: recommend, proposed: realloc=off }

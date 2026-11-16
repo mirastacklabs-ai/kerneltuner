@@ -1,12 +1,15 @@
 - url: https://docs.vllm.ai/en/stable/deployment/docker/
+  title: "Using Docker"
   project: vllm
   covers: Official Docker deployment - --ipc=host, "ipc=host flag or --shm-size flag" note, shared memory used by PyTorch for tensor parallel inference
   last_reviewed: "2026-11-16"
 - url: https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+  title: "Parallelism and Scaling"
   project: vllm
   covers: Enabling GPUDirect RDMA - IPC_LOCK capability, /dev/shm mount, docker example with --ipc=host --shm-size=16G
   last_reviewed: "2026-11-16"
 - url: https://man7.org/linux/man-pages/man2/mlock.2.html
+  title: "mlock(2) - Linux manual page"
   project: linux-man-pages
   covers: mlock(2) - RLIMIT_MEMLOCK limit for unprivileged processes, CAP_IPC_LOCK exemption
   last_reviewed: "2026-11-16"

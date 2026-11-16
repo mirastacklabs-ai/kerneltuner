@@ -21,8 +21,12 @@
     these, ignore this finding.
   verify: "docker inspect shows HostConfig.IpcMode=host or a large ShmSize for the vLLM container"
   sources:
-    - https://docs.vllm.ai/en/stable/deployment/docker/
-    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+    - url: https://docs.vllm.ai/en/stable/deployment/docker/
+      section: "Deploying with Docker"
+      quote: "You can either use the ipc=host flag or --shm-size flag to allow the container to access the host's shared memory."
+    - url: https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+      section: "Enabling GPUDirect RDMA"
+      quote: "Shared memory with /dev/shm: mount /dev/shm in the pod spec to provide shared memory for interprocess communication (IPC)."
   tests:
     - fixture: vllm-docker
       expect: { status: recommend }
@@ -54,8 +58,12 @@
   verify: "grep 'locked memory' /proc/<pid>/limits shows unlimited; NCCL_DEBUG=TRACE log shows [send] via NET/IB/GDRDMA"
   namespaced: false
   sources:
-    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
-    - https://man7.org/linux/man-pages/man2/mlock.2.html
+    - url: https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+      section: "Enabling GPUDirect RDMA"
+      quote: "IPC_LOCK security context: add the IPC_LOCK capability to the container's security context to lock memory pages and prevent swapping to disk."
+    - url: https://man7.org/linux/man-pages/man2/mlock.2.html
+      section: "Limits and permissions"
+      quote: "Since Linux 2.6.9, no limits are placed on the amount of memory that a privileged process can lock and the RLIMIT_MEMLOCK soft resource limit instead defines a limit on how much memory an unprivileged process may lock."
   tests:
     - fixture: gpu-8xh100
       expect: { status: recommend, proposed: infinity, target: vllm.service }

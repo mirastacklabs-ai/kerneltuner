@@ -18,7 +18,9 @@
   advice: "Set LimitMEMLOCK=infinity in the service unit (or memlock unlimited in /etc/security/limits.conf for login sessions)."
   verify: "grep 'locked memory' /proc/<pid>/limits shows unlimited"
   sources:
-    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+    - url: https://instinct.docs.amd.com/projects/cluster-documentation/latest/how-to/troubleshooting.html
+      section: "Resource limit restrictions"
+      quote: "* soft memlock unlimited * hard memlock unlimited"
   tests:
     - fixture: ai-amd-low-limits
       expect: { status: recommend, proposed: infinity, target: sglang.service }
@@ -47,7 +49,9 @@
   advice: "Set LimitNOFILE=1048576 in the service unit (or nofile 1048576 in /etc/security/limits.conf for login sessions)."
   verify: "grep 'open files' /proc/<pid>/limits shows 1048576"
   sources:
-    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+    - url: https://instinct.docs.amd.com/projects/cluster-documentation/latest/how-to/troubleshooting.html
+      section: "Resource limit restrictions"
+      quote: "* soft nofile 1048576 * hard nofile 1048576"
   tests:
     - fixture: ai-amd-low-limits
       expect: { status: recommend, proposed: "1048576", target: sglang.service }

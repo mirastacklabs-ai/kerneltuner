@@ -1,8 +1,10 @@
 - url: https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html
+  title: "Performance Tuning Guide"
   project: pytorch
   covers: Performance tuning guide - OpenMP (OMP_NUM_THREADS, OMP_PROC_BIND, GOMP_CPU_AFFINITY, KMP_AFFINITY, KMP_BLOCKTIME), NUMA controls
   last_reviewed: "2026-11-16"
 - url: https://gcc.gnu.org/onlinedocs/libgomp/Environment-Variables.html
+  title: "Environment Variables (GNU libgomp)"
   project: gcc-libgomp
   covers: GNU OpenMP environment variables OMP_NUM_THREADS, OMP_PROC_BIND, OMP_PLACES, GOMP_CPU_AFFINITY
   last_reviewed: "2026-11-16"

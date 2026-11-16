@@ -19,7 +19,9 @@
     the device and group flags from the AMD page). If the container already uses them, ignore this finding.
   verify: "docker inspect shows HostConfig.IpcMode=host and a ShmSize of at least 16g for the SGLang container"
   sources:
-    - https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+    - url: https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+      section: "Launch server (docker run)"
+      quote: "--ipc=host --shm-size 16g"
   tests:
     - fixture: sglang-docker
       expect: { status: recommend }

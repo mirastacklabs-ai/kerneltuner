@@ -19,7 +19,9 @@
     Set GRUB_CMDLINE_LINUX_DEFAULT="iommu=pt intel_iommu=on" in /etc/default/grub, run update-grub, reboot.
   verify: "/proc/cmdline contains iommu=pt"
   sources:
-    - https://docs.habana.ai/en/latest/Installation_Guide/Bare_Metal_Fresh_OS.html
+    - url: https://docs.habana.ai/en/latest/Installation_Guide/Driver_Installation.html
+      section: "Enable IOMMU Passthrough"
+      quote: "Enabling IOMMU passthrough is required only for Ubuntu 24.04.2/22.04.5 with Linux kernel 6.8."
   tests:
     - fixture: gaudi3-8x
       expect: { status: recommend, proposed: pt }
@@ -50,7 +52,9 @@
     Set GRUB_CMDLINE_LINUX_DEFAULT="iommu=pt intel_iommu=on" in /etc/default/grub, run update-grub, reboot.
   verify: "/proc/cmdline contains intel_iommu=on"
   sources:
-    - https://docs.habana.ai/en/latest/Installation_Guide/Bare_Metal_Fresh_OS.html
+    - url: https://docs.habana.ai/en/latest/Installation_Guide/Driver_Installation.html
+      section: "Enable IOMMU Passthrough"
+      quote: "Add GRUB_CMDLINE_LINUX_DEFAULT=\"iommu=pt intel_iommu=on\" to /etc/default/grub."
   tests:
     - fixture: gaudi3-8x
       expect: { status: ok }
@@ -78,7 +82,9 @@
     reboot; use cpupower, tuned or a boot unit to keep it). Do this on the host before starting containers.
   verify: "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor prints performance"
   sources:
-    - https://docs.habana.ai/en/latest/Installation_Guide/Bare_Metal_Fresh_OS.html
+    - url: https://docs.habana.ai/en/latest/Installation_Guide/Driver_Installation.html
+      section: "Set CPU Setting to Performance"
+      quote: "echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
   tests:
     - fixture: gaudi3-8x
       expect: { status: firing }
@@ -104,7 +110,9 @@
     (flags from the Gaudi Docker guide).
   verify: "docker inspect shows Runtime=habana, IpcMode=host and CapAdd sys_nice"
   sources:
-    - https://docs.habana.ai/en/latest/Installation_Guide/Additional_Installation/Docker_Installation.html
+    - url: https://docs.habana.ai/en/latest/Installation_Guide/Additional_Installation/Docker_Installation.html
+      section: "Docker Installation"
+      quote: "Make sure to include --ipc=host. This is required for distributed training using the Habana Collective Communication Library (HCCL), allowing re-use of host shared memory for best performance:"
   tests:
     - fixture: gaudi3-8x
       expect: { status: recommend }

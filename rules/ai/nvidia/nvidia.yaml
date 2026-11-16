@@ -18,7 +18,10 @@
     Enable the daemon (ships with the driver; unit/init files are in the driver documentation directory):
     systemctl enable --now nvidia-persistenced
   verify: nvidia-persistenced process is running; nvidia-smi -q reports Persistence Mode Enabled
-  sources: [https://docs.nvidia.com/deploy/driver-persistence/persistence-daemon.html]
+  sources:
+    - url: https://docs.nvidia.com/deploy/driver-persistence/latest/persistence-daemon.html
+      section: "Persistence Daemon"
+      quote: "Once the daemon is running, there is minimal overhead for keeping persistence mode enabled."
   tests:
     - fixture: gpu-8xh100
       expect: { status: recommend, proposed: running }
@@ -48,8 +51,12 @@
     IOMMU translating if you pass devices through to VMs with VFIO.
   verify: /proc/cmdline contains iommu=pt (or iommu.passthrough=1); this rule reports ok
   sources:
-    - https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
-    - https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
+    - url: https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
+      section: "IOMMUs"
+      quote: "This makes it incompatible with IOMMUs performing any form of translation other than 1:1, hence they must be disabled or configured for pass-through translation for GPUDirect RDMA to work."
+    - url: https://instinct.docs.amd.com/projects/system-acceptance/en/latest/gpus/mi300x.html
+      section: "Check kernel boot arguments"
+      quote: "Pass: Contains pci=realloc=off, amd_iommu=on or intel_iommu=on, and iommu=pt"
   tests:
     - fixture: gpu-8xh100
       expect: { status: firing }
@@ -78,8 +85,12 @@
     NCCL_DEBUG=TRACE and look for GDRDMA in the transport lines.
   verify: nvidia_peermem appears in /proc/modules; NCCL logs show NET/IB/GDRDMA
   sources:
-    - https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
-    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+    - url: https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
+      section: "Using nvidia-peermem"
+      quote: "Currently, there is no service to automatically load nvidia-peermem. Users need to load the module manually."
+    - url: https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+      section: "Enabling GPUDirect RDMA"
+      quote: "If you find [send] via NET/IB/GDRDMA in the logs, then NCCL is using InfiniBand with GPUDirect RDMA, which is efficient."
   tests:
     - fixture: gpu-8xh100
       expect: { status: firing }
@@ -109,8 +120,15 @@
     (width {{.item.LinkWidth}} of {{.item.LinkWidthMax}}). Re-read current_link_width under load before acting.
   verify: current_link_width equals max_link_width for the device
   sources:
-    - https://raw.githubusercontent.com/torvalds/linux/master/drivers/pci/pci-sysfs.c
-    - https://docs.nvidia.com/datacenter/dcgm/latest/user-guide/dcgm-diagnostics.html
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/drivers/pci/pci-sysfs.c
+      section: "current_link_width"
+      quote: "static DEVICE_ATTR_RO(current_link_width);"
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/drivers/pci/pci-sysfs.c
+      section: "max_link_width"
+      quote: "static DEVICE_ATTR_RO(max_link_width);"
+    - url: https://docs.nvidia.com/datacenter/dcgm/latest/user-guide/dcgm-diagnostics.html
+      section: "Configuration file (H100 example)"
+      quote: "min_pci_generation: 3.0 min_pci_width: 16.0"
   tests:
     - fixture: gpu-8xh100
       expect: { status: firing, target: "0000:ab:00.0" }
@@ -142,8 +160,12 @@
     systemd unit, so the advice is not offered on service-managed installs.
   verify: no shared-memory or bus errors from workers at tensor-parallel start-up
   sources:
-    - https://docs.vllm.ai/en/stable/deployment/docker/
-    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+    - url: https://docs.vllm.ai/en/stable/deployment/docker/
+      section: "Deploying with Docker"
+      quote: "You can either use the ipc=host flag or --shm-size flag to allow the container to access the host's shared memory."
+    - url: https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+      section: "Enabling GPUDirect RDMA"
+      quote: "Shared memory with /dev/shm: mount /dev/shm in the pod spec to provide shared memory for interprocess communication (IPC)."
   tests:
     - fixture: nvidia-vllm-docker
       expect: { status: recommend }

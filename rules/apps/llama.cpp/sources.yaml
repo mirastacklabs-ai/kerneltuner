@@ -1,20 +1,25 @@
 - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
+  title: "LLaMA.cpp HTTP Server (master)"
   project: llama.cpp
   covers: Current llama-server options - --load-mode auto|none|mmap|mlock|mmap+mlock|dio, --numa distribute|isolate|numactl, LLAMA_ARG_* env
   last_reviewed: "2026-11-16"
 - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/b4000/examples/server/README.md
+  title: "LLaMA.cpp HTTP Server (b4000)"
   project: llama.cpp
   covers: Older llama-server options (tag b4000) - --mlock, --no-mmap, --numa
   last_reviewed: "2026-11-16"
 - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/tools/server/README.md
+  title: "LLaMA.cpp HTTP Server (b6000)"
   project: llama.cpp
   covers: Older llama-server options (tag b6000) - --mlock, --no-mmap, --numa
   last_reviewed: "2026-11-16"
 - url: https://man7.org/linux/man-pages/man2/mlock.2.html
+  title: "mlock(2) - Linux manual page"
   project: linux-man-pages
   covers: mlock(2) - RLIMIT_MEMLOCK limit for unprivileged processes, CAP_IPC_LOCK exemption since Linux 2.6.9
   last_reviewed: "2026-11-16"
 - url: https://docs.docker.com/reference/cli/docker/container/run/
+  title: "docker container run"
   project: docker
   covers: docker run --ulimit (memlock) and --ipc
   last_reviewed: "2026-11-16"

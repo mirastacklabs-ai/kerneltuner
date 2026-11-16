@@ -21,9 +21,15 @@
     the first run with the flag (`sync; echo 3 > /proc/sys/vm/drop_caches` as root).
   verify: "the llama.cpp command line contains --numa (or LLAMA_ARG_NUMA is set in its environment)"
   sources:
-    - https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
-    - https://raw.githubusercontent.com/ggml-org/llama.cpp/b4000/examples/server/README.md
-    - https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/tools/server/README.md
+    - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
+      section: "Server options: --numa"
+      quote: "attempt optimizations that help on some NUMA systems"
+    - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/b4000/examples/server/README.md
+      section: "Server options: --numa"
+      quote: "attempt optimizations that help on some NUMA systems"
+    - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/tools/server/README.md
+      section: "Server options: --numa"
+      quote: "attempt optimizations that help on some NUMA systems"
   tests:
     - fixture: cpu-amx-2s
       expect: { status: firing }
@@ -58,9 +64,15 @@
     LLAMA_ARG_MLOCK / LLAMA_ARG_LOAD_MODE, which kerneltuner cannot see.
   verify: "VmLck in /proc/<pid>/status is about the model size; no major-fault growth (vmstat.pgmajfault) while serving"
   sources:
-    - https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
-    - https://raw.githubusercontent.com/ggml-org/llama.cpp/b4000/examples/server/README.md
-    - https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/tools/server/README.md
+    - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
+      section: "Server options: --load-mode"
+      quote: "mlock: force system to keep model in RAM rather than swapping or compressing"
+    - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/b4000/examples/server/README.md
+      section: "Server options: --mlock"
+      quote: "force system to keep model in RAM rather than swapping or compressing(env: LLAMA_ARG_MLOCK)"
+    - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/tools/server/README.md
+      section: "Server options: --mlock"
+      quote: "force system to keep model in RAM rather than swapping or compressing(env: LLAMA_ARG_MLOCK)"
   tests:
     - fixture: cpu-amx-2s
       expect: { status: firing }
@@ -94,9 +106,15 @@
   verify: "grep 'locked memory' /proc/<pid>/limits shows unlimited (or >= model size) and VmLck in /proc/<pid>/status matches the model"
   namespaced: false
   sources:
-    - https://man7.org/linux/man-pages/man2/mlock.2.html
-    - https://docs.docker.com/reference/cli/docker/container/run/
-    - https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
+    - url: https://man7.org/linux/man-pages/man2/mlock.2.html
+      section: "Limits and permissions"
+      quote: "Since Linux 2.6.9, no limits are placed on the amount of memory that a privileged process can lock and the RLIMIT_MEMLOCK soft resource limit instead defines a limit on how much memory an unprivileged process may lock."
+    - url: https://docs.docker.com/reference/cli/docker/container/run/
+      section: "Set ulimits in container (--ulimit)"
+      quote: "Specify --ulimit with a soft and hard limit in the format <type>=<soft limit>[:<hard limit>]."
+    - url: https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
+      section: "Server options: --load-mode"
+      quote: "mlock: force system to keep model in RAM rather than swapping or compressing"
   tests:
     - fixture: llama-cpp-mlock-numa
       expect: { status: recommend, proposed: infinity, target: llama-server.service }

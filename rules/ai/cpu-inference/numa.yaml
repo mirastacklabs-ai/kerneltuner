@@ -20,8 +20,12 @@
     app.pytorch.cpu-threading). llama.cpp has its own flag, covered by app.llama_cpp.numa.
   verify: "each instance's threads run only on its node's CPUs and its memory is allocated on that node"
   sources:
-    - https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html
-    - https://man7.org/linux/man-pages/man8/numactl.8.html
+    - url: https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html
+      section: "Utilize Non-Uniform Memory Access (NUMA) Controls"
+      quote: "Thus, inference can be run with multiple instances, each instance runs on one socket, to raise throughput."
+    - url: https://man7.org/linux/man-pages/man8/numactl.8.html
+      section: "OPTIONS"
+      quote: "--cpunodebind=nodes, -N nodes Only execute command on the CPUs of nodes."
   tests:
     - fixture: pytorch-cpu-amx-2s
       expect: { status: recommend }

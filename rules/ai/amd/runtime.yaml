@@ -17,8 +17,12 @@
     The script change is not persistent across reboot unless run at boot. Only needed for multi-node RCCL.
   verify: "lspci -vvv | grep -i acsctl shows no SrcValid+"
   sources:
-    - https://rocm.docs.amd.com/en/docs-7.0.0/how-to/rocm-for-ai/inference-optimization/workload.html
-    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+    - url: https://rocm.docs.amd.com/en/docs-7.0.0/how-to/rocm-for-ai/inference-optimization/workload.html
+      section: "Disable ACS for multi-node RCCL"
+      quote: "If there are any SrcValid+, then use the following disable_acs.sh script to disable ACS (requires sudo)."
+    - url: https://instinct.docs.amd.com/projects/cluster-documentation/latest/how-to/troubleshooting.html
+      section: "ACS enabled on baremetal systems"
+      quote: "On baremetal, disable ACS. For virtualized environments, ACS can be enabled, but make sure ATS is as well."
   tests:
     - fixture: gpu-8xmi300x
       expect: { status: recommend }
@@ -36,15 +40,16 @@
     when: 'accelCount("amd") > 0 and hasApp("sglang") and not facts.Host.Container'
   risk: low
   rationale: >-
-    The SGLang AMD guide runs its ROCm containers with --ipc=host --shm-size 16g (multi-process tensor
-    parallelism exchanges tensors through shared memory, and Docker's default /dev/shm is only 64 MB).
-    Only relevant if SGLang runs in a container.
+    The SGLang AMD guide runs its ROCm containers with --ipc=host --shm-size 16g; the page gives no
+    rationale for the flags. Only relevant if SGLang runs in a container.
   advice: >-
     If SGLang runs in Docker, start the container with --ipc=host --shm-size 16g (values from the SGLang AMD
     guide; size to your model and TP degree).
   verify: "df -h /dev/shm inside the container shows the larger size, or --ipc=host is set"
   sources:
-    - https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+    - url: https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+      section: "Launch server (docker run)"
+      quote: "--ipc=host --shm-size 16g"
   tests:
     - fixture: gpu-8xmi300x
       expect: { status: recommend }

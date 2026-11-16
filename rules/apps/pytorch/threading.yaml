@@ -22,8 +22,12 @@
     see ai.cpu.numa-binding.
   verify: "top -H shows the PyTorch worker threads staying on the intended CPUs"
   sources:
-    - https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html
-    - https://gcc.gnu.org/onlinedocs/libgomp/Environment-Variables.html
+    - url: https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html
+      section: "Utilize OpenMP"
+      quote: "OMP_NUM_THREADS is the easiest switch that can be used to accelerate computations. It determines number of threads used for OpenMP computations."
+    - url: https://gcc.gnu.org/onlinedocs/libgomp/Environment-Variables.html
+      section: "Environment Variables"
+      quote: "GOMP_CPU_AFFINITY – Bind threads to specific CPUs"
   tests:
     - fixture: pytorch-cpu-amx-2s
       expect: { status: recommend }

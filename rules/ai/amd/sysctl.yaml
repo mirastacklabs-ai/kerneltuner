@@ -17,10 +17,18 @@
   advice: "Runtime: sysctl -w kernel.numa_balancing=0. Persist in /etc/sysctl.d/ (or numa_balancing=0 on the kernel cmdline)."
   verify: "cat /proc/sys/kernel/numa_balancing prints 0"
   sources:
-    - https://rocm.docs.amd.com/en/docs-7.0.0/how-to/rocm-for-ai/inference-optimization/workload.html
-    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
-    - https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
-    - https://docs.kernel.org/admin-guide/sysctl/kernel.html
+    - url: https://rocm.docs.amd.com/en/docs-7.0.0/how-to/rocm-for-ai/inference-optimization/workload.html
+      section: "Disable NUMA auto-balancing"
+      quote: "In order to reduce performance variability and also achieve better performance, you need to make sure that NUMA auto-balancing is disabled on the node."
+    - url: https://instinct.docs.amd.com/projects/cluster-documentation/latest/how-to/troubleshooting.html
+      section: "RDMA bandwidth varies across runs"
+      quote: "Permanently disable numa_balancing by editing /etc/default/grub and adding string numa_balancing=0 to GRUB_CMDLINE_LINUX_DEFAULT."
+    - url: https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+      section: "Disable NUMA Auto-Balancing"
+      quote: "sudo sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'"
+    - url: https://docs.kernel.org/admin-guide/sysctl/kernel.html
+      section: "numa_balancing"
+      quote: "Enables/disables and configures automatic page fault based NUMA memory balancing."
   tests:
     - fixture: gpu-8xmi300x
       expect: { status: recommend, proposed: "0" }

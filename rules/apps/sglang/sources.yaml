@@ -1,4 +1,5 @@
 - url: https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+  title: "AMD GPUs"
   project: sglang
   covers: SGLang on AMD GPUs - container examples with --ipc=host --shm-size 16g
   last_reviewed: "2026-11-16"

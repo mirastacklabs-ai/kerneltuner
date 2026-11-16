@@ -1,8 +1,10 @@
-- url: https://docs.habana.ai/en/latest/Installation_Guide/Bare_Metal_Fresh_OS.html
+- url: https://docs.habana.ai/en/latest/Installation_Guide/Driver_Installation.html
+  title: "Driver and Software Installation"
   project: Intel Gaudi
   covers: bare-metal install; IOMMU passthrough on Ubuntu kernel 6.8; CPU governor performance; installer sets huge pages
   last_reviewed: "2026-11-16"
 - url: https://docs.habana.ai/en/latest/Installation_Guide/Additional_Installation/Docker_Installation.html
+  title: "Docker Installation"
   project: Intel Gaudi
   covers: docker run flags --runtime=habana --cap-add=sys_nice --net=host --ipc=host
   last_reviewed: "2026-11-16"

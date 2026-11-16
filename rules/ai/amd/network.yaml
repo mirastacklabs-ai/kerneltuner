@@ -18,7 +18,9 @@
     make sure every switch port on the path allows at least 9000.
   verify: "ib_write_bw -a runs clean for sizes above 1500; ip link shows mtu 9000"
   sources:
-    - https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html
+    - url: https://instinct.docs.amd.com/projects/cluster-documentation/latest/how-to/troubleshooting.html
+      section: "Low MTU setting"
+      quote: "For the best performance, MTU should be set to 9000 on the host and the maximum allowable MTU on the switch"
   tests:
     - fixture: ai-amd-roce-mtu1500
       expect: { status: firing, target: mlx5_0 }

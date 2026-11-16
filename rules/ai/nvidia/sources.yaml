@@ -1,28 +1,35 @@
-- url: https://docs.nvidia.com/deploy/driver-persistence/persistence-daemon.html
+- url: https://docs.nvidia.com/deploy/driver-persistence/latest/persistence-daemon.html
+  title: "Persistence Daemon"
   project: nvidia
   covers: nvidia-persistenced vs legacy persistence mode
   last_reviewed: "2026-11-16"
 - url: https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
+  title: "GPUDirect RDMA"
   project: nvidia
   covers: GPUDirect RDMA, IOMMU requirement, nvidia-peermem
   last_reviewed: "2026-11-16"
 - url: https://docs.vllm.ai/en/stable/deployment/docker/
+  title: "Using Docker"
   project: vllm
   covers: docker run --ipc=host / --shm-size for shared memory
   last_reviewed: "2026-11-16"
 - url: https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+  title: "Parallelism and Scaling"
   project: vllm
   covers: GPUDirect RDMA container settings (IPC_LOCK, /dev/shm), NCCL_DEBUG check
   last_reviewed: "2026-11-16"
-- url: https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
+- url: https://instinct.docs.amd.com/projects/system-acceptance/en/latest/gpus/mi300x.html
+  title: "AMD Instinct MI300X"
   project: amd
   covers: iommu=pt kernel command line (vendor-neutral meaning of the flag)
   last_reviewed: "2026-11-16"
 - url: https://raw.githubusercontent.com/torvalds/linux/master/drivers/pci/pci-sysfs.c
+  title: "drivers/pci/pci-sysfs.c"
   project: linux
   covers: current_link_width / max_link_width PCI sysfs attributes (source)
   last_reviewed: "2026-11-16"
 - url: https://docs.nvidia.com/datacenter/dcgm/latest/user-guide/dcgm-diagnostics.html
+  title: "DCGM Diagnostics"
   project: nvidia
   covers: DCGM PCIe diagnostic expects min_pci_width 16 on H100 PCIe
   last_reviewed: "2026-11-16"

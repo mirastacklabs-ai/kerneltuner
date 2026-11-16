@@ -17,7 +17,10 @@
     fixes it with memlock unlimited. The text is AMD's but describes generic RDMA verbs behaviour. systemd services
     do not read limits.conf, so set LimitMEMLOCK on the unit. Raising it removes a safety cap on pinned memory.
   verify: /proc/<pid>/limits shows Max locked memory unlimited for the app
-  sources: [https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html]
+  sources:
+    - url: https://instinct.docs.amd.com/projects/cluster-documentation/latest/how-to/troubleshooting.html
+      section: "Resource limit restrictions"
+      quote: "* soft memlock unlimited * hard memlock unlimited"
   tests:
     - fixture: gpu-8xh100
       expect: { status: recommend, proposed: infinity, target: vllm.service }
@@ -45,7 +48,10 @@
     Raise the MTU of the RoCE netdev (ip link set dev <ifname> mtu 9000, persisted in your network config) only
     after the switch ports and every hop on the path allow at least 9000.
   verify: ib_write_bw across the path completes with large messages; the netdev MTU reads 9000
-  sources: [https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html]
+  sources:
+    - url: https://instinct.docs.amd.com/projects/cluster-documentation/latest/how-to/troubleshooting.html
+      section: "Low MTU setting"
+      quote: "For the best performance, MTU should be set to 9000 on the host and the maximum allowable MTU on the switch"
   tests:
     - fixture: rdma-roce-mtu
       expect: { status: firing, target: mlx5_0 }
@@ -77,8 +83,18 @@
     list is useful.
   verify: NCCL_DEBUG=INFO lists only the intended NET/IB devices; NCCL_DEBUG=TRACE shows NET/IB/GDRDMA where expected
   sources:
-    - https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html
-    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+    - url: https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html
+      section: "NCCL_IB_HCA"
+      quote: "The NCCL_IB_HCA variable specifies which Host Channel Adapter (RDMA) interfaces to use for communication."
+    - url: https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html
+      section: "NCCL_SOCKET_IFNAME"
+      quote: "The NCCL_SOCKET_IFNAME variable specifies which IP interfaces to use for communication."
+    - url: https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html
+      section: "NCCL_NET_GDR_LEVEL"
+      quote: "The NCCL_NET_GDR_LEVEL variable allows the user to finely control when to use GPU Direct RDMA between a NIC and a GPU."
+    - url: https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+      section: "Enabling GPUDirect RDMA"
+      quote: "To confirm your InfiniBand card is using GPUDirect RDMA, run vLLM with detailed NCCL logs: NCCL_DEBUG=TRACE vllm serve ...."
   tests:
     - fixture: rdma-port-down
       expect: { status: recommend }

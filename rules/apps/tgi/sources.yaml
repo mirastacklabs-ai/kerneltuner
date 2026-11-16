@@ -1,4 +1,5 @@
 - url: https://huggingface.co/docs/text-generation-inference/quicktour
+  title: "Quick Tour"
   project: text-generation-inference
   covers: Quick tour - docker run --gpus all --shm-size 1g example
   last_reviewed: "2026-11-16"

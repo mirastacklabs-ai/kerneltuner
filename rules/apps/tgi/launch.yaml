@@ -17,7 +17,9 @@
     container already sets one, ignore this finding.
   verify: "docker inspect shows a non-default HostConfig.ShmSize for the TGI container"
   sources:
-    - https://huggingface.co/docs/text-generation-inference/quicktour
+    - url: https://huggingface.co/docs/text-generation-inference/quicktour
+      section: "Launching TGI"
+      quote: "docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data"
   tests:
     - fixture: tgi-docker
       expect: { status: recommend }
