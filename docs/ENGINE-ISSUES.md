@@ -20,3 +20,5 @@
 - [amd] RoCE netdevs only under infiniband/.../device/net are not in Facts.NICs (gpu-8xmi300x fixture).
 - [network] rps_cpus readback format assumption (zero-padded hex mask) unverified; check apply verify.
 - [network] Stock 10G+ hosts get 4 medium-risk recs from tuned network-throughput values (rmem/wmem/slow_start/notsent_lowat); consider gating on evidence.
+- [envoy/httpd] No mount table / fstype facts (NFS sendfile advice impossible).
+- [envoy/httpd] No app config parsing; rules gate on host symptoms only (by design for v1).
