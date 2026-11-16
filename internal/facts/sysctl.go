@@ -1,0 +1,183 @@
+package facts
+
+import (
+	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// SysctlDirs are the /proc/sys subtrees read by Collect, non-recursively.
+// Capture uses the same list.
+var SysctlDirs = []string{
+	"net/core", "net/ipv4", "net/netfilter", "vm", "kernel", "fs",
+	"net/ipv4/conf/all", "net/ipv4/conf/default",
+}
+
+func collectSysctl(r Root, f *Facts) {
+	base := filepath.Join(r.Proc, "sys")
+	if _, err := os.Stat(base); err != nil {
+		f.warnf("cannot read %s: %v", base, err)
+		return
+	}
+	for _, d := range SysctlDirs {
+		ents, err := os.ReadDir(filepath.Join(base, d))
+		if err != nil {
+			continue // e.g. net/netfilter without conntrack
+		}
+		prefix := strings.ReplaceAll(d, "/", ".") + "."
+		for _, e := range ents {
+			if !e.Type().IsRegular() {
+				continue
+			}
+			// Write-only entries (mode 0200) are skipped: root could open
+			// them and trigger side effects.
+			if info, err := e.Info(); err != nil || info.Mode().Perm()&0o444 == 0 {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(base, d, e.Name()))
+			if err != nil {
+				continue
+			}
+			f.Sysctl[prefix+e.Name()] = strings.Join(strings.Fields(string(b)), " ")
+		}
+	}
+}
+
+func collectLimits(r Root, f *Facts) {
+	f.Limits.FileMax = atou(f.Sysctl["fs.file-max"])
+	f.Limits.NrOpen = atou(f.Sysctl["fs.nr_open"])
+	if s, ok := f.readReq(filepath.Join(r.Proc, "sys/fs/file-nr")); ok {
+		if fs := strings.Fields(s); len(fs) > 0 {
+			f.Limits.FileNrAllocated = atou(fs[0])
+		}
+	}
+}
+
+func collectModules(r Root, f *Facts) {
+	b, err := os.ReadFile(filepath.Join(r.Proc, "modules"))
+	if err != nil {
+		f.warnf("cannot read %s: %v", filepath.Join(r.Proc, "modules"), err)
+		return
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if fs := strings.Fields(line); len(fs) > 0 {
+			f.Modules[fs[0]] = true
+		}
+	}
+}
+
+func collectProcs(r Root, f *Facts) {
+	ents, err := os.ReadDir(r.Proc)
+	if err != nil {
+		f.warnf("cannot read %s: %v", r.Proc, err)
+		return
+	}
+	for _, e := range ents {
+		pid := atoiDef(e.Name(), -1)
+		if pid < 0 || !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(r.Proc, e.Name())
+		comm, err := readStr(filepath.Join(dir, "comm"))
+		if err != nil {
+			continue // process exited while scanning
+		}
+		p := Proc{PID: pid, Comm: comm}
+		if b, err := os.ReadFile(filepath.Join(dir, "cmdline")); err == nil {
+			p.Cmdline = splitNUL(b)
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, "limits")); err == nil {
+			p.NoFileSoft, p.NoFileHard = parseLimit(string(b), "Max open files")
+			p.MemlockSoft, p.MemlockHard = parseLimit(string(b), "Max locked memory")
+		}
+		p.OpenFDs = countFDs(filepath.Join(dir, "fd"))
+		if b, err := os.ReadFile(filepath.Join(dir, "cgroup")); err == nil {
+			p.Unit = unitFromCgroup(string(b))
+		}
+		f.Procs = append(f.Procs, p)
+	}
+	sort.Slice(f.Procs, func(i, j int) bool { return f.Procs[i].PID < f.Procs[j].PID })
+}
+
+func splitNUL(b []byte) []string {
+	s := strings.TrimRight(string(b), "\x00")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\x00")
+}
+
+// parseLimit finds the row starting with name in /proc/<pid>/limits and
+// returns soft and hard values; "unlimited" is math.MaxUint64.
+func parseLimit(limits, name string) (soft, hard uint64) {
+	for _, line := range strings.Split(limits, "\n") {
+		rest, ok := strings.CutPrefix(line, name)
+		if !ok {
+			continue
+		}
+		fs := strings.Fields(rest)
+		if len(fs) < 2 {
+			return 0, 0
+		}
+		return limitVal(fs[0]), limitVal(fs[1])
+	}
+	return 0, 0
+}
+
+func limitVal(s string) uint64 {
+	if s == "unlimited" {
+		return math.MaxUint64
+	}
+	return atou(s)
+}
+
+// countFDs counts entries in fd/. Permission denied yields -1; a missing
+// directory yields 0.
+func countFDs(dir string) int {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsPermission(err) {
+			return -1
+		}
+		return 0
+	}
+	return len(ents)
+}
+
+// unitFromCgroup returns the last path element ending in ".service" from the
+// first cgroup line that has one.
+func unitFromCgroup(cg string) string {
+	for _, line := range strings.Split(cg, "\n") {
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		els := strings.Split(parts[2], "/")
+		for i := len(els) - 1; i >= 0; i-- {
+			if strings.HasSuffix(els[i], ".service") {
+				return els[i]
+			}
+		}
+	}
+	return ""
+}
+
+func collectEcosystem(r Root, f *Facts) {
+	tunedRunning := false
+	for _, p := range f.Procs {
+		switch p.Comm {
+		case "tuned":
+			tunedRunning = true
+		case "bpftune":
+			f.Bpftune = true
+		case "irqbalance":
+			f.Irqbalance = true
+		}
+	}
+	f.Tuned.Active = tunedRunning
+	if s := readOpt(filepath.Join(r.Etc, "tuned/active_profile")); s != "" {
+		f.Tuned.Profile = strings.Fields(s)[0]
+	}
+}
