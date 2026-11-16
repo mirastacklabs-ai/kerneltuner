@@ -1,0 +1,13 @@
+description: "Elasticsearch under systemd: stock max_map_count 65530, swappiness 60, tcp_retries2 15, nofile 4096, swap on"
+synthetic: true
+extends: base-linux
+files:
+  "proc/5100/cgroup": "0::/system.slice/elasticsearch.service\n"
+  "proc/5100/cmdline": "/usr/lib/jvm/java-17/bin/java\u0000-Xms8g\u0000-Xmx8g\u0000-cp\u0000/usr/share/elasticsearch/lib/*\u0000org.elasticsearch.bootstrap.Elasticsearch\u0000"
+  "proc/5100/comm": "java\n"
+  "proc/5100/fd/0": ""
+  "proc/5100/fd/1": ""
+  "proc/5100/fd/2": ""
+  "proc/5100/fd/3": ""
+  "proc/5100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            4096                 4096                 files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/meminfo": "MemTotal:       65536000 kB\nMemFree:        45875200 kB\nMemAvailable:   52428800 kB\nSwapTotal:      8388604 kB\nSwapFree:       8388604 kB\nHugepagesize:       2048 kB\n"

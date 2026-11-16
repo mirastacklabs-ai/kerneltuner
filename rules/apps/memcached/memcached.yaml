@@ -1,0 +1,86 @@
+- id: app.memcached.listen_backlog
+  title: memcached listen backlog vs net.core.somaxconn
+  kind: runtime
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: 'hasApp("memcached") && sysctlNum("net.core.somaxconn") > 0 && sysctlNum("net.core.somaxconn") < 1024'
+  advice: >-
+    memcached's `-b`/`--listen-backlog` defaults to 1024, but net.core.somaxconn on this host is below that, and the
+    kernel caps a listen() backlog at somaxconn. Raise net.core.somaxconn (and net.ipv4.tcp_max_syn_backlog) to at
+    least 1024, or lower `-b` to match.
+  verify: "sysctl net.core.somaxconn prints at least 1024; TcpExt.ListenOverflows rate stays 0"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The memcached man page documents `-b`: "Set the backlog queue limit to <num> connections. The default is 1024."
+    The kernel documents net.core.somaxconn as the "limit of socket listen() backlog", defaulting to 4096 (128 before
+    Linux 5.4). On 5.4+ with the default the rule is not-applicable; it fires on older kernels or hosts where somaxconn
+    was lowered. kerneltuner cannot see a custom `-b` value.
+  sources:
+    - https://raw.githubusercontent.com/memcached/memcached/master/doc/memcached.1
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: memcached-stock
+      expect: { status: recommend }
+    - fixture: memcached-tuned
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.memcached.swap
+  title: Swap enabled on a memcached host
+  kind: report
+  param: swap
+  domain: memory
+  applies:
+    when: 'hasApp("memcached")'
+  detect: "facts.Memory.SwapTotalBytes > 0"
+  risk: low
+  rationale: >-
+    The memcached hardware wiki says "Do not over-allocate memory and expect swap to save you. Performance will be very,
+    very poor" and "Often it's a good idea to run hosts with very little swap, or no swap at all. Better to let an
+    active service die than have it turn into a tarpit." The README adds that the -k (mlockall) option is dangerous
+    with a large cache and "just make sure the memcached machines don't swap". Risk: with no swap the OOM killer may
+    end memcached if memory runs out.
+  advice: >-
+    Swap is enabled ({{.facts.Memory.SwapTotalBytes}} bytes). Give memcached physical memory with a few percent of
+    headroom, monitor swap use, and consider very little or no swap on cache hosts.
+  verify: "swapon --show prints nothing, or free -m shows no swap in use"
+  sources:
+    - https://github.com/memcached/memcached/wiki/Hardware
+    - https://raw.githubusercontent.com/memcached/memcached/master/README.md
+  tests:
+    - fixture: memcached-stock
+      expect: { status: firing }
+    - fixture: memcached-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.memcached.numa
+  title: One memcached instance per NUMA node on multi-node hosts
+  kind: runtime
+  param: numactl
+  domain: cpu
+  applies:
+    when: 'hasApp("memcached") && len(facts.NUMA) > 1'
+  advice: >-
+    This host has {{len .facts.NUMA}} NUMA nodes. If you are extremely sensitive to latency, run one memcached instance
+    per NUMA node and bind each with numactl (for example `numactl --cpunodebind=N --membind=N memcached ...`) as the
+    memcached wiki suggests. Otherwise the default is fine.
+  verify: "each memcached process runs on one node's CPUs and memory; per-instance latency and hit rates do not regress"
+  risk: low
+  rationale: >-
+    The memcached hardware wiki says memcached "works okay under normal loads in a NUMA system" but shows "a measurable
+    performance drop under benchmarking conditions" when it runs across multiple NUMA nodes; its workaround is one
+    instance per node bound via numactl. The cost is more instances to run and clients that must shard across them.
+  sources:
+    - https://github.com/memcached/memcached/wiki/Hardware
+  tests:
+    - fixture: memcached-stock
+      expect: { status: recommend }
+    - fixture: memcached-tuned
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }

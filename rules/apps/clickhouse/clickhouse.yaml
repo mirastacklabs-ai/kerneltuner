@@ -1,0 +1,164 @@
+- id: app.clickhouse.transparent_hugepage
+  title: Transparent Huge Pages set to madvise for ClickHouse
+  kind: sysfs
+  param: /sys/kernel/mm/transparent_hugepage/enabled
+  domain: memory
+  applies:
+    when: 'hasApp("clickhouse")'
+  recommend: '"madvise"'
+  compare: eq
+  namespaced: false
+  risk: medium
+  rationale: >-
+    The ClickHouse usage recommendations say "Always set transparent huge pages to madvise": on kernels before 5.9 THP
+    set to always can cause significant slowdowns from memory defragmentation, especially with 64 GB+ of RAM, and even
+    on newer kernels ClickHouse warns at startup if THP is always, so madvise is recommended regardless of kernel
+    version. Risk: the setting is system-wide; other software on the host that relies on THP=always loses it.
+  advice: >-
+    `echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/enabled`. To persist, add `transparent_hugepage=madvise`
+    to GRUB_CMDLINE_LINUX_DEFAULT, run update-grub and reboot (the docs' method).
+  verify: "cat /sys/kernel/mm/transparent_hugepage/enabled shows [madvise]; clickhouse-server logs no THP warning at startup"
+  sources:
+    - https://clickhouse.com/docs/operations/tips
+  tests:
+    - fixture: clickhouse-stock
+      expect: { status: recommend, proposed: "madvise" }
+    - fixture: clickhouse-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.clickhouse.overcommit_memory
+  title: Do not disable memory overcommit for ClickHouse
+  kind: sysctl
+  param: vm.overcommit_memory
+  domain: memory
+  applies:
+    when: 'hasApp("clickhouse")'
+  recommend: "0"
+  compare: lte
+  namespaced: false
+  risk: medium
+  rationale: >-
+    The ClickHouse usage recommendations say "Do not disable overcommit. The value cat /proc/sys/vm/overcommit_memory
+    should be 0 or 1" and show `echo 0` as the command. Mode 2 is the kernel's never-overcommit policy, which rejects
+    allocations that heuristic mode would grant. Both 0 and 1 satisfy the rule; it only fires on 2. Risk: switching from
+    2 to 0 gives up the hard commit accounting other software on the host may rely on.
+  verify: "sysctl vm.overcommit_memory prints 0 or 1"
+  sources:
+    - https://clickhouse.com/docs/operations/tips
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+  tests:
+    - fixture: clickhouse-overcommit-off
+      expect: { status: recommend, proposed: "0" }
+    - fixture: clickhouse-stock
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.clickhouse.cpu_governor
+  title: CPU frequency governor on a ClickHouse host
+  kind: report
+  param: scaling_governor
+  domain: cpu
+  applies:
+    when: 'hasApp("clickhouse")'
+  detect: 'facts.CPU.Governor != "" && facts.CPU.Governor != "performance"'
+  risk: low
+  rationale: >-
+    The ClickHouse usage recommendations say "Always use the performance scaling governor. The on-demand scaling
+    governor works much worse with constantly high demand." Reported rather than applied because the governor is a
+    per-CPU setting. Risk: higher idle power and heat.
+  advice: >-
+    Governor is {{.facts.CPU.Governor}} (driver {{.facts.CPU.ScalingDriver}}). Set it with
+    `echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`; this does not survive a reboot,
+    so persist it with cpupower, tuned or a boot unit.
+  verify: "scaling_governor reads performance on every CPU"
+  sources:
+    - https://clickhouse.com/docs/operations/tips
+  tests:
+    - fixture: clickhouse-stock
+      expect: { status: firing }
+    - fixture: clickhouse-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.clickhouse.nofile
+  title: ClickHouse open-files limit below the packaged unit value
+  kind: limit
+  param: LimitNOFILE
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "clickhouse"'
+  recommend: "max(current, 500000)"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    ClickHouse's own clickhouse-server.service sets `LimitNOFILE=500000`. The soft limit shown is what the running
+    server got, so a lower value means it was started outside that unit or the unit was overridden. The usage
+    recommendations page does not mention file limits, and the unit file gives no reason for the number.
+  verify: "grep 'open files' /proc/<clickhouse pid>/limits shows at least 500000"
+  sources:
+    - https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/packages/clickhouse-server.service
+  tests:
+    - fixture: clickhouse-stock
+      expect: { status: recommend, proposed: "500000", target: clickhouse-server.service }
+    - fixture: clickhouse-tuned
+      expect: { status: ok, target: clickhouse-server.service }
+
+- id: app.clickhouse.hdd_scheduler
+  title: mq-deadline scheduler on rotational disks for ClickHouse
+  kind: sysfs
+  param: /sys/block/{item}/queue/scheduler
+  domain: storage
+  foreach: block
+  filter: "item.Rotational"
+  applies:
+    when: 'hasApp("clickhouse")'
+  recommend: '"mq-deadline"'
+  compare: eq
+  namespaced: false
+  risk: low
+  rationale: >-
+    The ClickHouse usage recommendations say: "Enable NCQ with a long queue. For HDD, choose the mq-deadline or CFQ
+    scheduler". CFQ no longer exists in current kernels, so only mq-deadline is checked. The page gives no number for
+    the gain. The rule applies to every rotational disk because it cannot tell which hold ClickHouse data.
+  advice: >-
+    `echo mq-deadline | sudo tee /sys/block/{{.target}}/queue/scheduler`; persist with a udev rule or tuned.
+  verify: "cat /sys/block/<disk>/queue/scheduler shows [mq-deadline]"
+  sources:
+    - https://clickhouse.com/docs/operations/tips
+  tests:
+    - fixture: clickhouse-stock
+      expect: { status: recommend, proposed: "mq-deadline", target: sda }
+    - fixture: clickhouse-tuned
+      expect: { status: ok, target: sda }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.clickhouse.filesystem
+  title: Filesystem and mount options for ClickHouse data
+  kind: runtime
+  param: filesystem
+  domain: storage
+  applies:
+    when: 'hasApp("clickhouse")'
+  risk: low
+  rationale: >-
+    The ClickHouse usage recommendations say "Ext4 is the most reliable option. Set the mount options noatime. XFS works
+    well too.", advise against compressed filesystems ("ClickHouse does compression on its own and better") and
+    against encrypted ones (use the built-in encryption), and call NFS "not the best idea". kerneltuner has no mount
+    facts, so it cannot check this and always prints the advice for a ClickHouse host.
+  advice: >-
+    Check the mount of the ClickHouse data directory (/var/lib/clickhouse by default) with `findmnt -T /var/lib/clickhouse`:
+    use ext4 or xfs, add `noatime` to its mount options, and avoid compressed, encrypted and NFS volumes.
+  verify: "findmnt -T /var/lib/clickhouse shows ext4 or xfs with noatime"
+  sources:
+    - https://clickhouse.com/docs/operations/tips
+  tests:
+    - fixture: clickhouse-stock
+      expect: { status: recommend }
+    - fixture: base-linux
+      expect: { status: not-applicable }

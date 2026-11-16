@@ -1,0 +1,12 @@
+- url: https://clickhouse.com/docs/operations/tips
+  project: clickhouse
+  covers: "governor, overcommit, THP madvise, HDD scheduler, filesystem and noatime"
+  last_reviewed: 2026-11-16
+- url: https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/packages/clickhouse-server.service
+  project: clickhouse
+  covers: "packaged unit LimitNOFILE=500000"
+  last_reviewed: 2026-11-16
+- url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+  project: linux
+  covers: "vm.overcommit_memory modes 0, 1, 2"
+  last_reviewed: 2026-11-16

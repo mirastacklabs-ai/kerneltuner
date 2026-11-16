@@ -1,0 +1,14 @@
+description: "OpenSearch with max_map_count 262144, nofile 65536, no swap"
+synthetic: true
+extends: base-linux
+files:
+  "proc/6100/cgroup": "0::/system.slice/opensearch.service\n"
+  "proc/6100/cmdline": "/usr/lib/jvm/java-17/bin/java\u0000-Xms8g\u0000-Xmx8g\u0000-cp\u0000/opt/opensearch/lib/*\u0000org.opensearch.bootstrap.OpenSearch\u0000-d\u0000"
+  "proc/6100/comm": "java\n"
+  "proc/6100/fd/0": ""
+  "proc/6100/fd/1": ""
+  "proc/6100/fd/2": ""
+  "proc/6100/fd/3": ""
+  "proc/6100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            65536                65536                files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/meminfo": "MemTotal:       65536000 kB\nMemFree:        45875200 kB\nMemAvailable:   52428800 kB\nSwapTotal:      0 kB\nSwapFree:       0 kB\nHugepagesize:       2048 kB\n"
+  "proc/sys/vm/max_map_count": "262144\n"

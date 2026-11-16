@@ -1,0 +1,80 @@
+- id: app.opensearch.max_map_count
+  title: vm.max_map_count for OpenSearch
+  kind: sysctl
+  param: vm.max_map_count
+  domain: memory
+  applies:
+    when: 'hasApp("opensearch")'
+  recommend: "262144"
+  compare: gte
+  namespaced: false
+  risk: low
+  rationale: >-
+    The OpenSearch install docs say "For production workloads running on Linux, make sure the Linux setting
+    vm.max_map_count is set to at least 262144", also when using the Docker image (set it on the host), and
+    document that OpenSearch fails to start with "max virtual memory areas vm.max_map_count [65530] is too low".
+    Risk: a higher limit only allows more mappings per process.
+  verify: "sysctl vm.max_map_count prints at least 262144"
+  sources:
+    - https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/
+  tests:
+    - fixture: opensearch-stock
+      expect: { status: recommend, proposed: "262144" }
+    - fixture: opensearch-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.opensearch.nofile
+  title: OpenSearch open-files limit below 65536
+  kind: limit
+  param: LimitNOFILE
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "opensearch"'
+  recommend: "max(current, 65536)"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The OpenSearch install docs list `nofile 65536` among the important settings ("Sets a limit of 65536 open files
+    for the OpenSearch user") in their sample Docker configuration. The soft limit shown is what the running process
+    has. The docs do not describe the failure mode of a lower limit.
+  verify: "grep 'open files' /proc/<opensearch pid>/limits shows at least 65536"
+  sources:
+    - https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/
+  tests:
+    - fixture: opensearch-stock
+      expect: { status: recommend, proposed: "65536", target: opensearch.service }
+    - fixture: opensearch-tuned
+      expect: { status: ok, target: opensearch.service }
+
+- id: app.opensearch.swap
+  title: Swap enabled on an OpenSearch host
+  kind: report
+  param: swap
+  domain: memory
+  applies:
+    when: 'hasApp("opensearch")'
+  detect: "facts.Memory.SwapTotalBytes > 0"
+  risk: low
+  rationale: >-
+    The OpenSearch install docs tell Linux hosts to "Disable memory paging and swapping performance on the host to
+    improve performance" with `sudo swapoff -a`, and say of bootstrap.memory_lock that "Swapping can dramatically
+    decrease performance and stability, so you should ensure it is disabled on production clusters." A node that uses
+    bootstrap.memory_lock with LimitMEMLOCK=infinity is covered by that setting instead, which kerneltuner cannot see.
+    Risk: with no swap the OOM killer is the only response to memory exhaustion.
+  advice: >-
+    Swap is enabled ({{.facts.Memory.SwapTotalBytes}} bytes). Run `sudo swapoff -a` and remove swap entries from
+    /etc/fstab, or confirm the node sets bootstrap.memory_lock: true with memlock unlimited.
+  verify: "swapon --show prints nothing"
+  sources:
+    - https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/
+    - https://opensearch.org/docs/latest/install-and-configure/install-opensearch/tar/
+  tests:
+    - fixture: opensearch-stock
+      expect: { status: firing }
+    - fixture: opensearch-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

@@ -1,0 +1,5 @@
+description: "elasticsearch-stock with swap disabled"
+synthetic: true
+extends: elasticsearch-stock
+files:
+  "proc/meminfo": "MemTotal:       65536000 kB\nMemFree:        45875200 kB\nMemAvailable:   52428800 kB\nSwapTotal:      0 kB\nSwapFree:       0 kB\nHugepagesize:       2048 kB\n"

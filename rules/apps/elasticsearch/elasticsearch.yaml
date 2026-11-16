@@ -1,0 +1,113 @@
+- id: app.elasticsearch.max_map_count
+  title: vm.max_map_count for Elasticsearch
+  kind: sysctl
+  param: vm.max_map_count
+  domain: memory
+  applies:
+    when: 'hasApp("elasticsearch")'
+  recommend: "1048576"
+  compare: gte
+  namespaced: false
+  risk: low
+  rationale: >-
+    Elasticsearch uses mmapfs by default, which relies on memory-mapped files, so the per-process mapping limit must
+    be adequately high; if it is too low the node might fail to start or hit out-of-memory errors. The reference says
+    "If the default value is lower than 1048576, configure the vm.max_map_count parameter to 1048576" and that setting
+    it in /etc/sysctl.conf takes precedence over package defaults. Risk: a higher limit only allows more mappings per
+    process.
+  verify: "sysctl vm.max_map_count prints at least 1048576"
+  sources:
+    - https://www.elastic.co/guide/en/elasticsearch/reference/current/vm-max-map-count.html
+  tests:
+    - fixture: elasticsearch-stock
+      expect: { status: recommend, proposed: "1048576" }
+    - fixture: elasticsearch-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.elasticsearch.swappiness
+  title: vm.swappiness=1 for Elasticsearch when swap is enabled
+  kind: sysctl
+  param: vm.swappiness
+  domain: memory
+  applies:
+    when: 'hasApp("elasticsearch") && facts.Memory.SwapTotalBytes > 0'
+  recommend: "1"
+  compare: lte
+  namespaced: false
+  risk: medium
+  rationale: >-
+    The reference says swapping "is very bad for performance, for node stability, and should be avoided at all
+    costs": garbage collections can last minutes and nodes can disconnect from the cluster. Its preferred option is to
+    disable swap entirely (`swapoff -a` and remove swap lines from /etc/fstab); if that is not possible, set
+    vm.swappiness to 1, which "reduces the kernel's tendency to swap" while still allowing swap in emergencies, or lock
+    the heap with bootstrap.memory_lock (needs LimitMEMLOCK=infinity). This rule only checks the swappiness option.
+    Risk: swappiness 1 can still swap off-heap memory under pressure.
+  advice: >-
+    Preferred: `swapoff -a` and comment out swap entries in /etc/fstab. Otherwise `sysctl -w vm.swappiness=1`. A host
+    that uses bootstrap.memory_lock already protects the heap and can ignore this.
+  verify: "sysctl vm.swappiness prints 1 or 0, or swapon --show is empty"
+  sources:
+    - https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-configuration-memory.html
+  tests:
+    - fixture: elasticsearch-stock
+      expect: { status: recommend, proposed: "1" }
+    - fixture: elasticsearch-tuned
+      expect: { status: ok }
+    - fixture: elasticsearch-noswap
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.elasticsearch.tcp_retries2
+  title: net.ipv4.tcp_retries2=5 for Elasticsearch clusters
+  kind: sysctl
+  param: net.ipv4.tcp_retries2
+  domain: network
+  applies:
+    when: 'hasApp("elasticsearch")'
+  recommend: "5"
+  compare: lte
+  namespaced: true
+  risk: medium
+  rationale: >-
+    Linux retransmits lost packets 15 times by default, which "take over 900 seconds to complete", so a network
+    partition or failed node takes many minutes to detect and shard reallocation and master election wait for it. The
+    reference says to reduce tcp_retries2 to 5 (about 13 seconds) and does not adjust it automatically because it applies
+    to every TCP connection on the host. Risk: on a low-quality network, or for connections to external systems, 5 can
+    drop connections that would have recovered; use a higher value there.
+  verify: "sysctl net.ipv4.tcp_retries2 prints 5"
+  sources:
+    - https://www.elastic.co/guide/en/elasticsearch/reference/current/system-config-tcpretries.html
+  tests:
+    - fixture: elasticsearch-stock
+      expect: { status: recommend, proposed: "5" }
+    - fixture: elasticsearch-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.elasticsearch.nofile
+  title: Elasticsearch open-files limit below 65535
+  kind: limit
+  param: LimitNOFILE
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "elasticsearch"'
+  recommend: "max(current, 65535)"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The reference says "Running out of file descriptors can be disastrous and will most probably lead to data loss" and
+    to raise the open-file limit for the Elasticsearch user "to 65,535 or higher". RPM and Debian packages already
+    default to 65535, so a lower soft limit means the process runs outside the packaged unit or the unit was overridden.
+  verify: "grep 'open files' /proc/<elasticsearch pid>/limits shows at least 65535"
+  sources:
+    - https://www.elastic.co/guide/en/elasticsearch/reference/current/file-descriptors.html
+  tests:
+    - fixture: elasticsearch-stock
+      expect: { status: recommend, proposed: "65535", target: elasticsearch.service }
+    - fixture: elasticsearch-tuned
+      expect: { status: ok, target: elasticsearch.service }

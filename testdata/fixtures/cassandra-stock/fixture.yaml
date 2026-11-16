@@ -1,0 +1,22 @@
+description: "Cassandra under systemd on kernel 5.15: stock vm.max_map_count 65530, keepalive 7200, nofile 1024, 8 MiB memlock, read-ahead 128 KB, swap on"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3100/cgroup": "0::/system.slice/cassandra.service\n"
+  "proc/3100/cmdline": "/usr/lib/jvm/java-17/bin/java\u0000-Xms8G\u0000-Xmx8G\u0000-cp\u0000/opt/cassandra/lib/*\u0000org.apache.cassandra.service.CassandraDaemon\u0000"
+  "proc/3100/comm": "java\n"
+  "proc/3100/fd/0": ""
+  "proc/3100/fd/1": ""
+  "proc/3100/fd/2": ""
+  "proc/3100/fd/3": ""
+  "proc/3100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                 1024                 files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/meminfo": "MemTotal:       65536000 kB\nMemFree:        45875200 kB\nMemAvailable:   52428800 kB\nSwapTotal:      8388604 kB\nSwapFree:       8388604 kB\nHugepagesize:       2048 kB\n"
+  "sys/block/nvme0n1/device/transport": "pcie\n"
+  "sys/block/nvme0n1/queue/nr_requests": "256\n"
+  "sys/block/nvme0n1/queue/read_ahead_kb": "128\n"
+  "sys/block/nvme0n1/queue/rotational": "0\n"
+  "sys/block/nvme0n1/queue/scheduler": "[none] mq-deadline\n"
+  "sys/block/sda/queue/nr_requests": "256\n"
+  "sys/block/sda/queue/read_ahead_kb": "128\n"
+  "sys/block/sda/queue/rotational": "1\n"
+  "sys/block/sda/queue/scheduler": "none [mq-deadline] kyber bfq\n"
