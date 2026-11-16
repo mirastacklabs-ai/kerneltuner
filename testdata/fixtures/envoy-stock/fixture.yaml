@@ -1,0 +1,12 @@
+description: "Envoy under systemd with the 1024 soft open-files limit; stock somaxconn 4096, kernel 5.15"
+synthetic: true
+extends: base-linux
+files:
+  "proc/2101/comm": "envoy\n"
+  "proc/2101/cmdline": "/usr/local/bin/envoy\u0000-c\u0000/etc/envoy/envoy.yaml\u0000"
+  "proc/2101/cgroup": "0::/system.slice/envoy.service\n"
+  "proc/2101/fd/0": ""
+  "proc/2101/fd/1": ""
+  "proc/2101/fd/2": ""
+  "proc/2101/fd/3": ""
+  "proc/2101/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                 524288               files     \nMax locked memory         8388608              8388608              bytes     \n"

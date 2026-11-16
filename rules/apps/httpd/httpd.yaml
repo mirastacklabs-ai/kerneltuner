@@ -1,0 +1,51 @@
+- id: app.httpd.listen_backlog
+  title: httpd ListenBackLog (default 511) vs net.core.somaxconn
+  kind: runtime
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: "hasApp(\"httpd\") && (sysctlNum(\"net.core.somaxconn\") > 0 && sysctlNum(\"net.core.somaxconn\") < 511 || rate(\"TcpExt.ListenOverflows\") > 0)"
+  evidence:
+    - metric: TcpExt.ListenOverflows
+      rate_gt: 0
+  advice: >-
+    httpd's ListenBackLog defaults to 511, and its docs note the value "will often be limited to a smaller number by the operating system". On Linux that limit is net.core.somaxconn, so a value below 511 (128 before Linux 5.4) truncates the default queue. httpd documents that "generally no tuning is needed or desired" for ListenBackLog; if ListenOverflows is rising, raise net.core.somaxconn (and net.ipv4.tcp_max_syn_backlog) first, and only then set ListenBackLog to match. Check that the MPM is not out of workers before deepening the queue.
+  verify: "TcpExt.ListenOverflows rate stays 0 (nstat -az TcpExtListenOverflows); ss -ltn shows Send-Q for httpd's listeners at the intended backlog"
+  namespaced: true
+  risk: low
+  rationale: >-
+    mpm_common documents ListenBackLog default 511 and that the OS usually caps it; Linux caps it at net.core.somaxconn, which the kernel documents as 4096 (128 before 5.4). The httpd docs also say tuning is generally not needed, so the rule fires only when somaxconn is below the 511 default or ListenOverflows is observed. Deeper queues add latency under overload, and the httpd config is not parsed.
+  sources:
+    - https://httpd.apache.org/docs/2.4/mod/mpm_common.html
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: httpd-small-somaxconn
+      expect: { status: recommend }
+    - fixture: httpd-stock
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.httpd.swapping
+  title: httpd host is swapping; size MaxRequestWorkers to RAM
+  kind: runtime
+  param: MaxRequestWorkers
+  domain: memory
+  applies:
+    when: "hasApp(\"httpd\") && facts.Memory.SwapTotalBytes > 0 && rate(\"vmstat.pswpout\") > 0"
+  advice: >-
+    The httpd performance guide says "A webserver should never ever have to swap, as swapping increases the latency of each request" and to control MaxRequestWorkers so the server does not spawn so many children that it starts swapping: measure the average httpd process size (top), divide into total memory, and leave room for other processes. This host is currently swapping pages out; reduce MaxRequestWorkers (and with it ServerLimit/ThreadsPerChild totals) accordingly, or add RAM. The docs give no vm.swappiness value.
+  verify: "vmstat.pswpout rate returns to 0 (vmstat 1, so column); request latency recovers"
+  namespaced: false
+  risk: low
+  rationale: >-
+    The perf-tuning page names swapping as the main hardware-side performance hazard and gives a sizing procedure for MaxRequestWorkers instead of a kernel setting. The rule fires only on observed swap-out activity, so an idle swap partition is not flagged. The httpd config and process sizes are not parsed.
+  sources:
+    - https://httpd.apache.org/docs/2.4/misc/perf-tuning.html
+  tests:
+    - fixture: httpd-swapping
+      expect: { status: recommend }
+    - fixture: httpd-stock
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }

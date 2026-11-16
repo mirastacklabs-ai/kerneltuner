@@ -1,0 +1,54 @@
+- id: app.envoy.fd_limit
+  title: Envoy soft open-files limit too low for the half-of-limit connection guideline
+  kind: runtime
+  param: LimitNOFILE
+  domain: limits
+  applies:
+    when: "hasApp(\"envoy\") && any(facts.Procs, {.Comm == \"envoy\" && .NoFileSoft <= 1024})"
+  advice: >-
+    The Envoy process runs with RLIMIT_NOFILE soft 1024. Envoy's docs recommend keeping the sum of all listener connection limits (and the global downstream limit, the overload manager's envoy.resource_monitors.global_downstream_max_connections) below half of the system's file descriptor limit, to leave room for upstream connections, files and other descriptor use. At 1024 that guideline allows fewer than 512 downstream connections in total. Raise LimitNOFILE= in the Envoy systemd unit (or the container's nofile ulimit) and then set connection limits under half of the new value. The hard limit and fs.nr_open must be at least as large.
+  verify: "cat /proc/<envoy pid>/limits shows the new Max open files; configured listener connection_limit values and global_downstream_max_connections sum to less than half of it"
+  namespaced: true
+  risk: low
+  rationale: >-
+    Envoy's FAQ and overload manager docs say the connection limits should stay under half of the file descriptor limit because every downstream connection usually has an upstream one plus files. A soft limit of 1024 is the common non-raised default, so this rule fires only while Envoy is still at or below it; the Envoy docs do not state a recommended absolute LimitNOFILE value, so none is proposed. Envoy's config is not parsed, so whether 1024 is actually too low depends on the expected connection count.
+  sources:
+    - https://www.envoyproxy.io/docs/envoy/latest/faq/configuration/resource_limits
+    - https://www.envoyproxy.io/docs/envoy/latest/configuration/operations/overload_manager/overload_manager
+  tests:
+    - fixture: envoy-stock
+      expect: { status: recommend }
+    - fixture: envoy-tuned
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.envoy.tcp_backlog_vs_somaxconn
+  title: Envoy listener backlog follows net.core.somaxconn
+  kind: runtime
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: "hasApp(\"envoy\") && (sysctlNum(\"net.core.somaxconn\") > 0 && sysctlNum(\"net.core.somaxconn\") <= 128 || rate(\"TcpExt.ListenOverflows\") > 0)"
+  evidence:
+    - metric: TcpExt.ListenOverflows
+      rate_gt: 0
+  advice: >-
+    Envoy's listener `tcp_backlog_size` defaults to net.core.somaxconn on Linux, so the accept queue is whatever the sysctl says unless the listener sets tcp_backlog_size explicitly (the kernel still caps the effective queue at somaxconn). With somaxconn at 128 (the default before Linux 5.4) or with ListenOverflows rising, raise net.core.somaxconn (and net.ipv4.tcp_max_syn_backlog), or set `tcp_backlog_size` on the listener and keep somaxconn at least as large. A deeper queue only hides slow accept(), so also check worker saturation.
+  verify: "TcpExt.ListenOverflows rate stays 0 (nstat -az TcpExtListenOverflows); ss -ltn shows Send-Q equal to the intended backlog for Envoy's listeners"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The Envoy API reference states that without tcp_backlog_size "net.core.somaxconn will be used on Linux", so a low host sysctl directly shrinks every Envoy listener queue. The kernel documents somaxconn as 4096 by default, 128 before Linux 5.4, so the rule fires on the old default or on observed ListenOverflows. Deeper queues add latency under overload. Envoy's config is not parsed, so an explicit tcp_backlog_size is not visible.
+  sources:
+    - https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/listener/v3/listener.proto
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: envoy-small-somaxconn
+      expect: { status: recommend }
+    - fixture: envoy-listen-overflow
+      expect: { status: recommend }
+    - fixture: envoy-tuned
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }

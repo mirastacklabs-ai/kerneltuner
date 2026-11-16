@@ -1,0 +1,16 @@
+- url: https://www.envoyproxy.io/docs/envoy/latest/faq/configuration/resource_limits
+  project: envoy
+  covers: file descriptor exhaustion, connection limits under half of the fd limit
+  last_reviewed: 2026-11-16
+- url: https://www.envoyproxy.io/docs/envoy/latest/configuration/operations/overload_manager/overload_manager
+  project: envoy
+  covers: global_downstream_max_connections recommended below half of the fd limit
+  last_reviewed: 2026-11-16
+- url: https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/listener/v3/listener.proto
+  project: envoy
+  covers: listener tcp_backlog_size defaults to net.core.somaxconn on Linux
+  last_reviewed: 2026-11-16
+- url: https://docs.kernel.org/networking/ip-sysctl.html
+  project: linux
+  covers: net.core.somaxconn default (4096 since 5.4, 128 before)
+  last_reviewed: 2026-11-16

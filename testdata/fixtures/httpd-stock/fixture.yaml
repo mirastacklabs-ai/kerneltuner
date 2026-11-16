@@ -1,0 +1,12 @@
+description: "Apache httpd 2.4 under systemd, stock somaxconn 4096, kernel 5.15, no swap activity"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3101/comm": "httpd\n"
+  "proc/3101/cmdline": "/usr/sbin/httpd\u0000-DFOREGROUND\u0000"
+  "proc/3101/cgroup": "0::/system.slice/httpd.service\n"
+  "proc/3101/fd/0": ""
+  "proc/3101/fd/1": ""
+  "proc/3101/fd/2": ""
+  "proc/3101/fd/3": ""
+  "proc/3101/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                 524288               files     \nMax locked memory         8388608              8388608              bytes     \n"
