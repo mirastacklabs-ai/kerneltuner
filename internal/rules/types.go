@@ -79,9 +79,12 @@ type Ecosystem struct {
 	Bpftune []string                // sysctls bpftune tunes (bpftune.yaml)
 }
 
+// ErrNotImplemented is returned by stubs until the loader lands.
+var ErrNotImplemented = errors.New("not implemented")
+
 // Load reads all packs from fsys (embedded FS or --rules-dir overlay).
 // Stub.
 func Load(fsys fs.FS) ([]Rule, Ecosystem, []Source, error) {
 	_ = fsys
-	return nil, Ecosystem{}, nil, errors.New("not implemented")
+	return nil, Ecosystem{}, nil, ErrNotImplemented
 }
