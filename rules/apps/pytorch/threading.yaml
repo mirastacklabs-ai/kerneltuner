@@ -1,0 +1,33 @@
+- id: app.pytorch.cpu-threading
+  title: Pin PyTorch CPU OpenMP threads (OMP_NUM_THREADS and affinity)
+  kind: runtime
+  param: OMP_NUM_THREADS
+  domain: ai
+  applies:
+    when: 'hasApp("pytorch") && accelCount("") == 0'
+  risk: low
+  rationale: >-
+    PyTorch's CPU parallelism uses OpenMP (GNU libgomp by default). The tuning guide calls OMP_NUM_THREADS the
+    easiest switch and says CPU affinity (GOMP_CPU_AFFINITY, or KMP_AFFINITY with Intel's libiomp) controls
+    communication, cache-line invalidation and page-thrashing overhead; core pinning stops threads migrating
+    between CPUs. These are process environment variables, which kerneltuner cannot read, so this is advice for
+    every CPU-only PyTorch host, not a detected misconfiguration.
+  advice: >-
+    This host has {{.facts.CPU.Cores}} physical cores ({{.facts.CPU.Threads}} threads) across
+    {{.facts.CPU.Sockets}} socket(s). Set OMP_NUM_THREADS to the number of cores the instance is allowed to use
+    (our sizing reading of the guide: the physical cores of the NUMA node it is pinned to, not the SMT siblings;
+    the guide itself only says "N"). GNU OpenMP: export OMP_PROC_BIND=CLOSE and GOMP_CPU_AFFINITY="N-M" with the
+    CPU ids of those cores. Intel OpenMP (libiomp5 via LD_PRELOAD): export KMP_AFFINITY=granularity=fine,compact,1,0
+    and KMP_BLOCKTIME=1 (the guide says 1 or 0 is good in most cases). Keep threads and memory on the same node,
+    see ai.cpu.numa-binding.
+  verify: "top -H shows the PyTorch worker threads staying on the intended CPUs"
+  sources:
+    - https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html
+    - https://gcc.gnu.org/onlinedocs/libgomp/Environment-Variables.html
+  tests:
+    - fixture: pytorch-cpu-amx-2s
+      expect: { status: recommend }
+    - fixture: cpu-amx-2s
+      expect: { status: not-applicable }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }

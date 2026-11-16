@@ -1,0 +1,5 @@
+description: "gpu-8xh100 with vLLM running in a docker container (docker scope cgroup, no systemd .service unit)"
+synthetic: true
+extends: gpu-8xh100
+files:
+  "proc/4120/cgroup": "0::/system.slice/docker-3f9a2c1b7d54.scope\n"

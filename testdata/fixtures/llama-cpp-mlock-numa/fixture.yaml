@@ -1,0 +1,5 @@
+description: "cpu-amx-2s with llama-server launched with current-style flags --load-mode mmap+mlock --numa distribute, but RLIMIT_MEMLOCK still 8 MiB"
+synthetic: true
+extends: cpu-amx-2s
+files:
+  "proc/2210/cmdline": "/opt/llama.cpp/build/bin/llama-server\u0000-m\u0000/models/llama-3.1-70b-q4_k_m.gguf\u0000--port\u00008080\u0000-t\u000064\u0000--load-mode\u0000mmap+mlock\u0000--numa\u0000distribute\u0000"

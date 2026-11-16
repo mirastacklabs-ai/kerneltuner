@@ -1,0 +1,5 @@
+description: "gpu-8xh100 with the vllm.service process already running with an unlimited RLIMIT_MEMLOCK"
+synthetic: true
+extends: gpu-8xh100
+files:
+  "proc/4120/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax data size             unlimited            unlimited            bytes\nMax stack size            8388608              unlimited            bytes\nMax core file size        0                    unlimited            bytes\nMax resident set          unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1048576              1048576              files     \nMax locked memory         unlimited            unlimited            bytes     \nMax address space         unlimited            unlimited            bytes\n"

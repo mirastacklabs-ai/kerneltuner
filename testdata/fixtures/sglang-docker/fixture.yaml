@@ -1,0 +1,5 @@
+description: "gpu-8xmi300x with SGLang running in a docker container (docker scope cgroup, no systemd .service unit)"
+synthetic: true
+extends: gpu-8xmi300x
+files:
+  "proc/3310/cgroup": "0::/system.slice/docker-7be41c09aa12.scope\n"

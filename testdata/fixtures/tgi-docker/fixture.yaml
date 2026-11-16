@@ -1,0 +1,7 @@
+description: "gpu-8xh100 with text-generation-inference running in a docker container instead of vLLM"
+synthetic: true
+extends: gpu-8xh100
+files:
+  "proc/4120/comm": "text-generation-launcher\n"
+  "proc/4120/cmdline": "text-generation-launcher\u0000--model-id\u0000meta-llama/Llama-3.1-70B-Instruct\u0000--num-shard\u00008\u0000"
+  "proc/4120/cgroup": "0::/system.slice/docker-91d0e6c3f2b8.scope\n"

@@ -1,0 +1,6 @@
+description: "cpu-amx-2s with llama-server launched with older-style --mlock and --numa isolate, RLIMIT_MEMLOCK unlimited (well configured)"
+synthetic: true
+extends: cpu-amx-2s
+files:
+  "proc/2210/cmdline": "/opt/llama.cpp/build/bin/llama-server\u0000-m\u0000/models/llama-3.1-70b-q4_k_m.gguf\u0000--port\u00008080\u0000-t\u000064\u0000--mlock\u0000--numa\u0000isolate\u0000"
+  "proc/2210/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax data size             unlimited            unlimited            bytes\nMax stack size            8388608              unlimited            bytes\nMax core file size        0                    unlimited            bytes\nMax resident set          unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                 524288               files     \nMax locked memory         unlimited            unlimited            bytes     \nMax address space         unlimited            unlimited            bytes\n"

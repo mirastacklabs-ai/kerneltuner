@@ -1,0 +1,106 @@
+- id: app.llama_cpp.numa
+  title: llama.cpp launched without --numa on a multi-node host
+  kind: report
+  param: --numa
+  domain: ai
+  applies:
+    when: 'hasApp("llama.cpp") && len(facts.NUMA) > 1'
+  detect: '!any(facts.Procs, {.Comm in ["llama-server", "llama-cli"] && any(.Cmdline, {# == "--numa" || # startsWith "--numa="})})'
+  risk: low
+  rationale: >-
+    llama.cpp ships NUMA-aware thread placement behind --numa: distribute spreads execution evenly over all nodes,
+    isolate spawns threads only on the node execution started on, numactl uses the CPU map provided by numactl.
+    The flag is documented unchanged in builds from b4000 through current master, so it applies to every version.
+    The server README advises dropping the system page cache before using the flag for the first time if the model
+    was previously run without it.
+  advice: >-
+    {{len .facts.NUMA}} NUMA nodes and llama.cpp started without --numa. Add `--numa distribute` for one
+    instance spanning both sockets, or `--numa isolate` (or `--numa numactl` under `numactl --cpunodebind=N
+    --membind=N`) for one instance per node. The same setting can come from the LLAMA_ARG_NUMA environment variable,
+    which kerneltuner cannot see; if it is set, this finding is a false positive. Drop the page cache once before
+    the first run with the flag (`sync; echo 3 > /proc/sys/vm/drop_caches` as root).
+  verify: "the llama.cpp command line contains --numa (or LLAMA_ARG_NUMA is set in its environment)"
+  sources:
+    - https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
+    - https://raw.githubusercontent.com/ggml-org/llama.cpp/b4000/examples/server/README.md
+    - https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/tools/server/README.md
+  tests:
+    - fixture: cpu-amx-2s
+      expect: { status: firing }
+    - fixture: llama-cpp-mlock-numa
+      expect: { status: ok }
+    - fixture: llama-cpp-mlock-unlimited
+      expect: { status: ok }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+
+- id: app.llama_cpp.mlock
+  title: llama.cpp model weights are not locked in RAM on a host with swap
+  kind: report
+  param: --load-mode
+  domain: memory
+  applies:
+    when: 'hasApp("llama.cpp") && facts.Memory.SwapTotalBytes > 0'
+  detect: '!any(facts.Procs, {.Comm in ["llama-server", "llama-cli"] && any(.Cmdline, {# == "--mlock" || # == "mlock" || # == "mmap+mlock" || # endsWith "=mlock" || # endsWith "=mmap+mlock"})})'
+  risk: medium
+  rationale: >-
+    llama.cpp can force the system to keep the model in RAM rather than swapping or compressing it. The option
+    spelling depends on the build. Current llama.cpp documents --load-mode (-lm) auto|none|mmap|mlock|mmap+mlock|dio
+    (env LLAMA_ARG_LOAD_MODE); builds around tags b4000 and b6000 document --mlock and --no-mmap (env
+    LLAMA_ARG_MLOCK, LLAMA_ARG_NO_MMAP) instead. The detector accepts both spellings. Locking pins the whole
+    model, so it is only a recommendation when swap is enabled and the model fits comfortably in RAM.
+  advice: >-
+    Swap is enabled and llama.cpp does not lock its weights. Keep them resident with `--load-mode mmap+mlock` on
+    current builds, or `--mlock` on older builds (newer builds may no longer list --mlock/--no-mmap, so check
+    `llama-server --help`); `--no-mmap` (old) / `--load-mode none` (new) reads the file into private memory
+    instead and is slower to load. Only do this if free RAM exceeds the model plus KV cache, otherwise the host
+    can run out of memory. Locking needs RLIMIT_MEMLOCK high enough, see app.llama_cpp.memlock. The setting can also come from
+    LLAMA_ARG_MLOCK / LLAMA_ARG_LOAD_MODE, which kerneltuner cannot see.
+  verify: "VmLck in /proc/<pid>/status is about the model size; no major-fault growth (vmstat.pgmajfault) while serving"
+  sources:
+    - https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
+    - https://raw.githubusercontent.com/ggml-org/llama.cpp/b4000/examples/server/README.md
+    - https://raw.githubusercontent.com/ggml-org/llama.cpp/b6000/tools/server/README.md
+  tests:
+    - fixture: cpu-amx-2s
+      expect: { status: firing }
+    - fixture: llama-cpp-mlock-numa
+      expect: { status: ok }
+    - fixture: llama-cpp-mlock-unlimited
+      expect: { status: ok }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+
+- id: app.llama_cpp.memlock
+  title: llama.cpp locks its model but RLIMIT_MEMLOCK is too low
+  kind: limit
+  param: LimitMEMLOCK
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "llama.cpp" && any(facts.Procs, {.PID in item.PIDs && any(.Cmdline, {# == "--mlock" || # == "mlock" || # == "mmap+mlock" || # endsWith "=mlock" || # endsWith "=mmap+mlock"})})'
+  recommend: '"infinity"'
+  compare: gte
+  risk: medium
+  rationale: >-
+    mlock(2) is limited by RLIMIT_MEMLOCK for an unprivileged process (since Linux 2.6.9; processes with
+    CAP_IPC_LOCK are exempt), and fails with ENOMEM when the request exceeds it. The common default of 8 MiB is far
+    below any model, so llama.cpp's mlock/mmap+mlock cannot pin the weights.
+    kerneltuner does not know the model size, so it proposes infinity; any value above the GGUF file size plus
+    headroom works, and a smaller explicit limit is the safer choice on shared hosts.
+  advice: >-
+    Set LimitMEMLOCK=infinity (or at least the model size) in the llama.cpp systemd unit, or grant CAP_IPC_LOCK.
+    In Docker pass `--ulimit memlock=-1:-1`. Restart the service afterwards; a new limit does not apply to a running
+    process.
+  verify: "grep 'locked memory' /proc/<pid>/limits shows unlimited (or >= model size) and VmLck in /proc/<pid>/status matches the model"
+  namespaced: false
+  sources:
+    - https://man7.org/linux/man-pages/man2/mlock.2.html
+    - https://docs.docker.com/reference/cli/docker/container/run/
+    - https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md
+  tests:
+    - fixture: llama-cpp-mlock-numa
+      expect: { status: recommend, proposed: infinity, target: llama-server.service }
+    - fixture: llama-cpp-mlock-unlimited
+      expect: { status: ok, target: llama-server.service }
+    - fixture: cpu-amx-2s
+      expect: { status: not-applicable }
