@@ -53,7 +53,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	pf := root.PersistentFlags()
 	pf.StringVar(&g.RootDir, "root", "", "treat DIR as the filesystem root (DIR/proc, DIR/sys, ...)")
-	pf.StringVar(&g.RulesDir, "rules-dir", "", "load rule packs from DIR in addition to the embedded ones")
+	pf.StringVar(&g.RulesDir, "rules-dir", "", "load rule packs from DIR (the directory that holds kernel/, ai/, apps/, antipatterns/) instead of the embedded ones")
 	pf.StringVar(&g.Domain, "domain", "", "only rules in this domain (network|limits|memory|cpu|storage|ai)")
 	pf.StringVar(&g.Pack, "pack", "", "only rules in this pack (e.g. kernel/network)")
 	pf.BoolVar(&g.JSON, "json", false, "machine-readable JSON output")

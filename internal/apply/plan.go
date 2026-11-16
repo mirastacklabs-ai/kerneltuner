@@ -171,6 +171,8 @@ func planLimit(r advisor.Recommendation, root facts.Root) (*Op, string, error) {
 		key = "LimitNOFILE"
 	case "memlock":
 		key = "LimitMEMLOCK"
+	case "nproc":
+		key = "LimitNPROC"
 	default:
 		return nil, "unsupported limit: " + r.Param, nil
 	}

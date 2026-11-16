@@ -55,6 +55,15 @@ type Env struct {
 	AccelKindCount func(vendor, kind string) int    `expr:"accelKindCount"`
 	CmdlineHas     func(key, item string) bool      `expr:"cmdlineHas"`
 	AppContainer   func(app string) string          `expr:"appContainer"`
+	MountOf        func(path string) facts.Mount    `expr:"mountOf"`
+	FsType         func(path string) string         `expr:"fsType"`
+	MountHasOpt    func(path, opt string) bool      `expr:"mountHasOpt"`
+	BlockOf        func(path string) string         `expr:"blockOf"`
+	Kconfig        func(name string) string         `expr:"kconfig"`
+	// Unlimited is math.MaxUint64, the value of an "unlimited" rlimit. The expr
+	// parser rejects integer literals above int64, so rules use this instead.
+	Unlimited   uint64           `expr:"unlimited"`
+	IsUnlimited func(x any) bool `expr:"isUnlimited"`
 }
 
 // NewEnv builds the runtime environment. current and item may be nil.
@@ -66,7 +75,10 @@ func NewEnv(in EnvInput, current, item any) Env {
 		in.Workload = &workload.Workload{}
 	}
 	f := in.Facts
-	sysctl := func(name string) string { return f.Sysctl[name] }
+	sysctl := func(name string) string {
+		v, _ := SysctlValue(f, in.Root, name)
+		return v
+	}
 	return Env{
 		Facts: f, Workload: in.Workload, Current: current, Item: item,
 		Kver: func(c string) (bool, error) {
@@ -117,12 +129,57 @@ func NewEnv(in EnvInput, current, item any) Env {
 			}
 			return ""
 		},
-		Module:   func(n string) bool { return f.Modules[n] },
-		Bytes:    bytesFn,
-		Clamp:    clampFn,
-		Pow2Ceil: pow2ceilFn,
-		Contains: containsFn,
+		MountOf:     func(p string) facts.Mount { return f.MountOf(p) },
+		FsType:      func(p string) string { return f.MountOf(p).FSType },
+		MountHasOpt: func(p, opt string) bool { return f.MountOf(p).HasOpt(opt) },
+		BlockOf:     func(p string) string { return f.BlockDeviceOf(p) },
+		Kconfig:     func(name string) string { return f.Kernel.Config[name] },
+		Unlimited:   math.MaxUint64,
+		IsUnlimited: IsUnlimited,
+		Module:      func(n string) bool { return f.Modules[n] },
+		Bytes:       bytesFn,
+		Clamp:       clampFn,
+		Pow2Ceil:    pow2ceilFn,
+		Contains:    containsFn,
 	}
+}
+
+// SysctlValue returns the value of a dotted sysctl name: from Facts.Sysctl,
+// else read from <Root.Proc>/sys/<path> (so names outside facts.SysctlDirs
+// work). Whitespace is normalised to single spaces. ok is false when the
+// sysctl cannot be read.
+func SysctlValue(f *facts.Facts, r facts.Root, name string) (string, bool) {
+	if v, ok := f.Sysctl[name]; ok {
+		return v, true
+	}
+	if r.Proc == "" || name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") {
+		return "", false
+	}
+	b, err := os.ReadFile(filepath.Join(r.Proc, "sys", strings.ReplaceAll(name, ".", "/")))
+	if err != nil {
+		return "", false
+	}
+	return strings.Join(strings.Fields(string(b)), " "), true
+}
+
+// IsUnlimited reports whether x is an "unlimited" rlimit value: math.MaxUint64
+// as uint64 or float (float64(MaxUint64) included), or the strings
+// "unlimited" and "infinity".
+func IsUnlimited(x any) bool {
+	switch v := x.(type) {
+	case uint64:
+		return v == math.MaxUint64
+	case uint:
+		return uint64(v) == math.MaxUint64
+	case float64:
+		return v >= float64(math.MaxUint64)
+	case float32:
+		return float64(v) >= float64(math.MaxUint64)
+	case string:
+		t := strings.ToLower(strings.TrimSpace(v))
+		return t == "unlimited" || t == "infinity"
+	}
+	return false
 }
 
 // CmdlineHas reports whether kernel cmdline key has item among its
