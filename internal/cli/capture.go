@@ -204,7 +204,7 @@ func (c *capturer) marker(key string) { c.snap.Files[key] = "" }
 func (c *capturer) proc() {
 	p := c.r.Proc
 	for _, rel := range []string{"sys/kernel/osrelease", "meminfo", "modules", "sys/fs/file-nr", "vmstat",
-		"pressure/cpu", "pressure/memory", "pressure/io", "net/netstat", "net/snmp", "net/softnet_stat", "net/sockstat", "1/cgroup"} {
+		"pressure/cpu", "pressure/memory", "pressure/io", "net/netstat", "net/snmp", "net/softnet_stat", "net/sockstat", "1/cgroup", "swaps"} {
 		c.file("proc", p, rel, nil)
 	}
 	c.file("proc", p, "cmdline", redactCmdlineText)
@@ -412,6 +412,7 @@ func (c *capturer) sys() {
 	c.file("sys", s, cpu+"smt/active", nil)
 	c.file("sys", s, cpu+"smt/control", nil)
 	c.file("sys", s, cpu+"cpuidle/current_driver", nil)
+	c.glob("sys", s, cpu+"vulnerabilities/*", nil)
 	c.glob("sys", s, "devices/system/node/node[0-9]*/cpulist", nil)
 	c.glob("sys", s, "devices/system/node/node[0-9]*/meminfo", nil)
 	c.file("sys", s, "kernel/mm/transparent_hugepage/enabled", nil)
@@ -532,12 +533,24 @@ func (c *capturer) pci() {
 
 func (c *capturer) misc() {
 	c.file("etc", c.r.Etc, "tuned/active_profile", nil)
+	c.file("etc", c.r.Etc, "os-release", keepOSRelease)
 	if exists(filepath.Join(c.r.Run, ".containerenv")) {
 		c.marker("run/.containerenv")
 	}
 	if exists(filepath.Join(filepath.Dir(c.r.Etc), ".dockerenv")) {
 		c.marker(".dockerenv")
 	}
+}
+
+// keepOSRelease keeps only ID and VERSION_ID of an os-release file.
+func keepOSRelease(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(line, "ID=") || strings.HasPrefix(line, "VERSION_ID=") {
+			b.WriteString(line + "\n")
+		}
+	}
+	return b.String()
 }
 
 func exists(p string) bool {

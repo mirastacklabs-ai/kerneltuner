@@ -36,6 +36,9 @@ type Op struct {
 	FileKind string `json:"file_kind,omitempty"`
 	FileKey  string `json:"file_key,omitempty"`
 	Unit     string `json:"unit,omitempty"`
+
+	// Rules lists every rule merged into this op when several target the same setting.
+	Rules []string `json:"rules,omitempty"`
 }
 
 // Skip records a selected recommendation that cannot be applied.
@@ -49,6 +52,8 @@ type Plan struct {
 	Root    facts.Root `json:"-"`
 	Ops     []Op       `json:"ops"`
 	Skipped []Skip     `json:"skipped,omitempty"`
+	// Warnings lists proposals that disagreed and how they were merged.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // BuildPlan resolves recommendations (kinds sysctl, sysfs, limit; status
@@ -57,22 +62,34 @@ type Plan struct {
 // Go does not allow a function and a type of the same name.)
 func BuildPlan(recs []advisor.Recommendation, root facts.Root) (*Plan, error) {
 	p := &Plan{Root: root}
+	recs, conflicts := advisor.Reconcile(recs)
+	for _, c := range conflicts {
+		p.Warnings = append(p.Warnings, c.String())
+	}
 	for _, r := range recs {
 		if r.Status != advisor.StatusRecommend && r.Status != advisor.StatusFiring {
 			continue
 		}
 		var (
-			op   *Op
+			ops  []Op
 			skip string
 			err  error
 		)
 		switch r.Kind {
 		case "sysctl":
+			var op *Op
 			op, skip, err = planSysctl(r, root)
+			if op != nil {
+				ops = []Op{*op}
+			}
 		case "sysfs":
-			op, skip, err = planSysfs(r, root)
+			ops, skip, err = planSysfs(r, root)
 		case "limit":
+			var op *Op
 			op, skip, err = planLimit(r, root)
+			if op != nil {
+				ops = []Op{*op}
+			}
 		default:
 			continue
 		}
@@ -83,7 +100,12 @@ func BuildPlan(recs []advisor.Recommendation, root facts.Root) (*Plan, error) {
 			p.Skipped = append(p.Skipped, Skip{RuleID: r.RuleID, Reason: skip})
 			continue
 		}
-		p.Ops = append(p.Ops, *op)
+		for _, op := range ops {
+			if len(r.Contributors) > 1 {
+				op.Rules = r.Contributors
+			}
+			p.Ops = append(p.Ops, op)
+		}
 	}
 	return p, nil
 }
@@ -108,22 +130,38 @@ func planSysctl(r advisor.Recommendation, root facts.Root) (*Op, string, error) 
 		LivePath: live, File: file, FileKind: fileSysctl, FileKey: r.Param}, "", nil
 }
 
-func planSysfs(r advisor.Recommendation, root facts.Root) (*Op, string, error) {
+// planSysfs yields one op per item: Targets for a foreach_summary
+// recommendation (every CPU, say), else the single Target. Items whose path
+// is absent (offline CPUs) are dropped; if none exists the rule is skipped.
+func planSysfs(r advisor.Recommendation, root facts.Root) ([]Op, string, error) {
 	if r.Param == "" || r.Proposed == "" {
 		return nil, "missing param or proposed value", nil
 	}
-	tmpl := strings.ReplaceAll(r.Param, "{item}", r.Target)
-	tmpl = strings.TrimPrefix(tmpl, "/sys/")
-	tmpl = strings.TrimPrefix(tmpl, "/")
-	live, err := within(root.Sys, filepath.Join(root.Sys, tmpl))
-	if err != nil {
-		return nil, "", err
+	targets := r.Targets
+	if len(targets) == 0 {
+		targets = []string{r.Target}
 	}
-	if _, err := os.Stat(live); err != nil {
-		return nil, "sysfs path not present: " + live, nil
+	var ops []Op
+	missing := ""
+	for _, t := range targets {
+		tmpl := strings.ReplaceAll(r.Param, "{item}", t)
+		tmpl = strings.TrimPrefix(tmpl, "/sys/")
+		tmpl = strings.TrimPrefix(tmpl, "/")
+		live, err := within(root.Sys, filepath.Join(root.Sys, tmpl))
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := os.Stat(live); err != nil {
+			missing = live
+			continue
+		}
+		ops = append(ops, Op{RuleID: r.RuleID, Kind: r.Kind, Param: r.Param, Target: t,
+			Proposed: r.Proposed, LivePath: live})
 	}
-	return &Op{RuleID: r.RuleID, Kind: r.Kind, Param: r.Param, Target: r.Target,
-		Proposed: r.Proposed, LivePath: live}, "", nil
+	if len(ops) == 0 {
+		return nil, "sysfs path not present: " + missing, nil
+	}
+	return ops, "", nil
 }
 
 func planLimit(r advisor.Recommendation, root facts.Root) (*Op, string, error) {

@@ -177,6 +177,12 @@ func Text(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) error {
 		writeGroup(&b, shown[i].Domain, shown[i:j])
 		i = j
 	}
+	if conflicts := advisor.Conflicts(recs); len(conflicts) > 0 {
+		fmt.Fprintf(&b, "conflicts: %d setting(s) have disagreeing proposals; generate and apply merge them\n", len(conflicts))
+		for _, c := range conflicts {
+			fmt.Fprintf(&b, "  %s\n", c)
+		}
+	}
 	if hidden := len(recs) - len(shown); hidden > 0 {
 		fmt.Fprintf(&b, "\n%d more result(s) hidden (ok, not-applicable, managed, host-only); use --all to show them.\n", hidden)
 	}
@@ -250,6 +256,8 @@ type JSONRecommendation struct {
 	Advice    string         `json:"advice"`
 	Verify    string         `json:"verify"`
 	Sources   []string       `json:"sources"`
+	// Targets lists every item behind a foreach_summary recommendation.
+	Targets []string `json:"targets,omitempty"`
 }
 
 // JSONEvidence is one evidence hit.
@@ -273,7 +281,7 @@ func ToJSON(r advisor.Recommendation) JSONRecommendation {
 		RuleID: r.RuleID, Kind: r.Kind, Domain: r.Domain, Param: r.Param, Target: r.Target, Title: r.Title,
 		Current: r.Current, Proposed: r.Proposed, Status: string(r.Status), Risk: r.Risk, Reboot: r.Reboot,
 		Score: r.Score, Evidence: []JSONEvidence{}, ManagedBy: r.ManagedBy, Rationale: r.Rationale,
-		Advice: r.Advice, Verify: r.Verify, Sources: r.Sources,
+		Advice: r.Advice, Verify: r.Verify, Sources: r.Sources, Targets: r.Targets,
 	}
 	if j.Sources == nil {
 		j.Sources = []string{}

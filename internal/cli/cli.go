@@ -22,10 +22,20 @@ type globalOpts struct {
 	Pack     string
 	JSON     bool
 	Workload []string
+
+	// Fixture is the hidden dev flag --fixture NAME (scan, generate, apply):
+	// materialize testdata/fixtures/NAME into a temp dir and use it as the root,
+	// with its injected values and rates.
+	Fixture string
+	// fixRoot is set by loadPipeline once the fixture is materialized.
+	fixRoot *facts.Root
 }
 
 // Root resolves the filesystem root: DefaultRoot, or RootAt(--root).
 func (g *globalOpts) Root() facts.Root {
+	if g.fixRoot != nil {
+		return *g.fixRoot
+	}
 	if g.RootDir == "" {
 		return facts.DefaultRoot()
 	}

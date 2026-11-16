@@ -37,6 +37,7 @@ type Facts struct {
 	Limits     Limits
 	Modules    map[string]bool // /proc/modules names
 	Procs      []Proc          // all processes
+	Swaps      []Swap          // /proc/swaps
 	Tuned      Tuned
 	Bpftune    bool // a process with comm "bpftune" is running
 	Irqbalance bool
@@ -58,6 +59,20 @@ type Host struct {
 	Container        bool
 	ContainerRuntime string
 	Cloud            string // "aws","gcp","azure","" from DMI
+	Distro           Distro // from os-release
+}
+
+// Distro is the ID and VERSION_ID of os-release ("ubuntu", "24.04"). Both are
+// empty when no os-release file is readable.
+type Distro struct{ ID, VersionID string }
+
+// Swap is one row of /proc/swaps.
+type Swap struct {
+	Path     string
+	Type     string // "partition" | "file"
+	SizeKB   uint64
+	Priority int
+	Zram     bool // Path is a /dev/zram* device
 }
 
 // CPU describes processor topology and power settings.
@@ -68,6 +83,11 @@ type CPU struct {
 	SMTControl                               string
 	Flags                                    map[string]bool
 	ScalingDriver, Governor, EPP, IdleDriver string
+	// Vulnerabilities maps /sys/devices/system/cpu/vulnerabilities/<name> to its
+	// text, e.g. "spectre_v2" -> "Mitigation: Retpolines; ...".
+	Vulnerabilities map[string]string
+	// IDs are the logical CPU ids present under /sys/devices/system/cpu (cpuN).
+	IDs []int
 }
 
 // NUMANode is one NUMA node.
@@ -113,6 +133,8 @@ type Accelerator struct {
 	LinkSpeed, LinkSpeedMax                    string
 	LinkWidth, LinkWidthMax                    int
 	IOMMUGroup                                 string
+	// Kind is "gpu", "nvswitch" or "npu".
+	Kind string
 }
 
 // RDMADev is an RDMA device.
@@ -147,6 +169,7 @@ type Proc struct {
 	MemlockHard uint64
 	OpenFDs     int
 	Unit        string // systemd unit from /proc/<pid>/cgroup, "" if none
+	Container   string // container runtime from the cgroup path: docker|containerd|crio|podman, "" if none
 }
 
 // Tuned describes the tuned daemon state.

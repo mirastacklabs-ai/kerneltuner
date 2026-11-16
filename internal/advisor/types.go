@@ -38,6 +38,17 @@ type Recommendation struct {
 	ManagedBy                                  string // "tuned:<profile>" | "bpftune"
 	Rationale, Advice, Verify                  string
 	Sources                                    []string
+	// Compare is the rule's compare mode (eq, gte, lte, set); Reconcile uses
+	// it to merge duplicates.
+	Compare string
+	// Targets lists every item behind a foreach_summary recommendation (Target
+	// is then a range such as "cpu0-63 (64)"); apply writes each one.
+	Targets []string
+	// Contributors lists every rule id behind a merged recommendation; set by
+	// Reconcile when several rules target the same (kind, param, target).
+	Contributors []string
+	// Note explains how Reconcile merged the contributors.
+	Note string
 }
 
 // Input is everything Evaluate needs.

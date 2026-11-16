@@ -10,7 +10,7 @@ func Collect(r Root) (*Facts, error) {
 		Sysctl:  map[string]string{},
 		Modules: map[string]bool{},
 		Kernel:  Kernel{CmdlineArgs: map[string]string{}},
-		CPU:     CPU{Flags: map[string]bool{}},
+		CPU:     CPU{Flags: map[string]bool{}, Vulnerabilities: map[string]string{}},
 		Memory:  Memory{HugePages: map[string]uint64{}},
 	}
 	// Order matters: host and accel look at cpuinfo/cmdline results.
@@ -27,6 +27,7 @@ func Collect(r Root) (*Facts, error) {
 	collectSysctl(r, f)
 	collectLimits(r, f)
 	collectModules(r, f)
+	collectSwaps(r, f)
 	collectProcs(r, f)
 	collectEcosystem(r, f)
 	return f, nil

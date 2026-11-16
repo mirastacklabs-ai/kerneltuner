@@ -17,7 +17,7 @@ var (
 	Domains   = []string{"network", "limits", "memory", "cpu", "storage", "ai"}
 	Risks     = []string{"low", "medium", "high"}
 	Compares  = []string{"eq", "gte", "lte", "set"}
-	Foreaches = []string{"nic", "block", "accel", "rdma", "app", "numa"}
+	Foreaches = []string{"nic", "block", "accel", "rdma", "app", "numa", "cpu"}
 	Statuses  = []string{"recommend", "ok", "not-applicable", "managed", "host-only", "firing", "error"}
 	// NICParams are the valid params of kind nic.
 	NICParams = []string{"combined", "rx_ring", "tx_ring"}
@@ -59,6 +59,20 @@ func ValidateWith(rs []Rule, srcs []Source, fixturesDir string) []error {
 		registered[s.URL] = true
 	}
 	seen := map[string]string{}
+	fixtureMemo := map[string]error{} // each fixture is parsed once
+	checkFixture := func(name string) error {
+		if err, ok := fixtureMemo[name]; ok {
+			return err
+		}
+		_, err := fixture.ParseIn(fixturesDir, name)
+		if err == nil {
+			if _, serr := os.Stat(filepath.Join(fixturesDir, name, "fixture.yaml")); serr != nil {
+				err = fmt.Errorf("fixture %q does not exist", name)
+			}
+		}
+		fixtureMemo[name] = err
+		return err
+	}
 	for i := range rs {
 		r := &rs[i]
 		where := r.ID
@@ -68,7 +82,7 @@ func ValidateWith(rs []Rule, srcs []Source, fixturesDir string) []error {
 		add := func(format string, a ...any) {
 			errs = append(errs, fmt.Errorf("%s: %s", where, fmt.Sprintf(format, a...)))
 		}
-		validateRule(r, registered, fixturesDir, add)
+		validateRule(r, registered, fixturesDir != "", checkFixture, add)
 		if r.ID != "" {
 			if prev, dup := seen[r.ID]; dup {
 				add("duplicate id (also in %s)", prev)
@@ -80,7 +94,7 @@ func ValidateWith(rs []Rule, srcs []Source, fixturesDir string) []error {
 	return errs
 }
 
-func validateRule(r *Rule, registered map[string]bool, fixturesDir string, add func(string, ...any)) {
+func validateRule(r *Rule, registered map[string]bool, checkFixtures bool, checkFixture func(string) error, add func(string, ...any)) {
 	if !idRe.MatchString(r.ID) {
 		add("id %q must match %s", r.ID, idRe)
 	}
@@ -104,6 +118,12 @@ func validateRule(r *Rule, registered map[string]bool, fixturesDir string, add f
 	}
 	if r.Filter != "" && r.Foreach == "" {
 		add("filter requires foreach")
+	}
+	if r.ForeachSummary && r.Foreach == "" {
+		add("foreach_summary requires foreach")
+	}
+	if r.RequireEvidence && len(r.Evidence) == 0 {
+		add("require_evidence needs at least one evidence entry")
 	}
 
 	// Required fields per kind.
@@ -203,11 +223,9 @@ func validateRule(r *Rule, registered map[string]bool, fixturesDir string, add f
 	for j, t := range r.Tests {
 		if t.Fixture == "" {
 			add("tests[%d]: fixture is required", j)
-		} else if fixturesDir != "" {
-			if _, err := fixture.ParseIn(fixturesDir, t.Fixture); err != nil {
+		} else if checkFixtures {
+			if err := checkFixture(t.Fixture); err != nil {
 				add("tests[%d]: %v", j, err)
-			} else if _, err := os.Stat(filepath.Join(fixturesDir, t.Fixture, "fixture.yaml")); err != nil {
-				add("tests[%d]: fixture %q does not exist", j, t.Fixture)
 			}
 		}
 		if !in(Statuses, t.Expect.Status) {

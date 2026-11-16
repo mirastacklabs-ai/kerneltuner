@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,7 +54,7 @@ func base(r *rules.Rule) Recommendation {
 	return Recommendation{
 		RuleID: r.ID, Kind: r.Kind, Domain: r.Domain, Param: r.Param, Title: r.Title,
 		Risk: r.Risk, Reboot: r.Reboot, Rationale: r.Rationale, Verify: r.Verify,
-		Sources: r.Sources, Status: StatusNotApplicable,
+		Sources: r.Sources, Status: StatusNotApplicable, Compare: r.Compare,
 	}
 }
 
@@ -123,7 +125,77 @@ func evalRule(r *rules.Rule, in Input) (recs []Recommendation) {
 		}
 		recs = append(recs, rec)
 	}
+	if r.ForeachSummary && len(recs) > 1 {
+		recs = summarize(recs)
+	}
 	return recs
+}
+
+var cpuNameRe = regexp.MustCompile(`^cpu(\d+)$`)
+
+// summarize collapses foreach results that are identical apart from the item
+// into one recommendation with Target "cpu0-63 (64)" and Targets listing every
+// item. Groups keep the order of their first member.
+func summarize(recs []Recommendation) []Recommendation {
+	type group struct {
+		rec   Recommendation
+		names []string
+	}
+	var order []string
+	groups := map[string]*group{}
+	for _, rec := range recs {
+		key := fmt.Sprintf("%s|%s|%s|%s|%s|%v|%v|%s", rec.Status, rec.Current, rec.Proposed, rec.Advice, rec.ManagedBy, rec.Evidence, rec.Score, rec.Compare)
+		g := groups[key]
+		if g == nil {
+			g = &group{rec: rec}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.names = append(g.names, rec.Target)
+	}
+	out := make([]Recommendation, 0, len(order))
+	for _, k := range order {
+		g := groups[k]
+		if len(g.names) > 1 {
+			g.rec.Target = summaryTarget(g.names)
+			g.rec.Targets = g.names
+		}
+		out = append(out, g.rec)
+	}
+	return out
+}
+
+// summaryTarget names a set of items: "cpu0-63 (64)" for cpu ids, otherwise
+// the names joined with commas.
+func summaryTarget(names []string) string {
+	var ids []int
+	for _, n := range names {
+		m := cpuNameRe.FindStringSubmatch(n)
+		if m == nil {
+			ids = nil
+			break
+		}
+		id, _ := strconv.Atoi(m[1])
+		ids = append(ids, id)
+	}
+	if ids == nil {
+		return fmt.Sprintf("%s (%d)", strings.Join(names, ","), len(names))
+	}
+	sort.Ints(ids)
+	var parts []string
+	for i := 0; i < len(ids); {
+		j := i
+		for j+1 < len(ids) && ids[j+1] == ids[j]+1 {
+			j++
+		}
+		if j == i {
+			parts = append(parts, strconv.Itoa(ids[i]))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d-%d", ids[i], ids[j]))
+		}
+		i = j + 1
+	}
+	return fmt.Sprintf("cpu%s (%d)", strings.Join(parts, ","), len(names))
 }
 
 func itemsOf(kind string, in Input) []item {
@@ -153,6 +225,17 @@ func itemsOf(kind string, in Input) []item {
 			}
 			out = append(out, item{name, a})
 		}
+	case "cpu":
+		ids := in.Facts.CPU.IDs
+		if len(ids) == 0 { // no sysfs cpu dirs: fall back to the NUMA cpulists
+			for _, n := range in.Facts.NUMA {
+				ids = append(ids, n.CPUs...)
+			}
+			sort.Ints(ids)
+		}
+		for _, id := range ids {
+			out = append(out, item{"cpu" + strconv.Itoa(id), id})
+		}
 	case "numa":
 		for _, n := range in.Facts.NUMA {
 			out = append(out, item{strconv.Itoa(n.ID), n})
@@ -167,7 +250,15 @@ func evalItem(r *rules.Rule, in Input, ein rules.EnvInput, it item) (Recommendat
 	env := rules.NewEnv(ein, nil, it.val)
 	rec.Evidence = evidenceHits(r, in, it.name)
 
+	// gate turns recommend/firing into ok when the rule requires evidence and
+	// none hit.
+	gate := func() {
+		if r.RequireEvidence && (rec.Status == StatusRecommend || rec.Status == StatusFiring) && len(rec.Evidence) == 0 {
+			rec.Status = StatusOK
+		}
+	}
 	finish := func() Recommendation {
+		gate()
 		rec.Advice = renderAdvice(r.Advice, in, rec, it.val, env.Current)
 		if rec.Status == StatusRecommend || rec.Status == StatusFiring {
 			hits := float64(len(rec.Evidence))
@@ -192,6 +283,15 @@ func evalItem(r *rules.Rule, in Input, ein rules.EnvInput, it item) (Recommendat
 		return finish(), nil
 	case "runtime":
 		rec.Status = StatusRecommend
+		if r.Detect != "" { // detect true: the advice is needed
+			need, err := rules.EvalBool(r.Detect, env)
+			if err != nil {
+				return rec, fmt.Errorf("detect: %w", err)
+			}
+			if !need {
+				rec.Status = StatusOK
+			}
+		}
 		return finish(), nil
 	}
 
@@ -213,15 +313,43 @@ func evalItem(r *rules.Rule, in Input, ein rules.EnvInput, it item) (Recommendat
 	}
 	prop := normalize(proposed, r.Kind == "limit")
 	rec.Proposed = formatValue(prop)
+	if s, ok := exactString(proposed); ok {
+		rec.Proposed = s // integers never pass through float64 formatting
+	}
+	if f, isF := proposed.(float64); isF && f >= 1<<53 {
+		// A float this large carries `current` through an expression (current
+		// is a float64): when it is the float of the live integer, keep the
+		// live integer's exact digits.
+		if n, ok := new(big.Int).SetString(display, 10); ok {
+			if cf, _ := new(big.Float).SetInt(n).Float64(); cf == f {
+				rec.Proposed = display
+			}
+		}
+	}
 	if r.Kind == "limit" && isInfinity(prop) {
 		rec.Proposed = "infinity"
 	}
 
-	if matches(r, cur, prop, display) {
+	if r.Kind == "service" && r.Detect != "" { // detect true: the advice is needed
+		need, err := rules.EvalBool(r.Detect, env)
+		if err != nil {
+			return rec, fmt.Errorf("detect: %w", err)
+		}
+		rec.Status = StatusOK
+		if need {
+			rec.Status = StatusRecommend
+		}
+		return finish(), nil
+	}
+	if matches(r, cur, prop, display, rec.Proposed) {
 		rec.Status = StatusOK
 		return finish(), nil
 	}
 	rec.Status = StatusRecommend
+	gate()
+	if rec.Status == StatusOK {
+		return finish(), nil
+	}
 	switch {
 	case in.Facts.Host.Container && !r.Namespaced && r.Kind != "service":
 		rec.Status = StatusHostOnly
@@ -375,6 +503,17 @@ func serviceRunning(in Input, unit string) bool {
 		if p.Comm == name || p.Unit == unit || p.Unit == name+".service" {
 			return true
 		}
+		// the kernel truncates comm to 15 bytes: nvidia-persistenced -> nvidia-persiste
+		if len(p.Comm) >= 15 && strings.HasPrefix(name, p.Comm) {
+			return true
+		}
+		if len(p.Cmdline) > 0 {
+			// argv[0] basename; setproctitle-style "nginx: master process" keeps the name before the colon
+			a0 := argv0Name(p.Cmdline[0])
+			if a0 == name {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -479,7 +618,7 @@ func formatValue(v any) string {
 }
 
 // matches decides ok vs recommend per the rule's compare mode.
-func matches(r *rules.Rule, cur, prop any, display string) bool {
+func matches(r *rules.Rule, cur, prop any, display, propStr string) bool {
 	mode := r.Compare
 	if mode == "" {
 		mode = "eq"
@@ -491,9 +630,25 @@ func matches(r *rules.Rule, cur, prop any, display string) bool {
 		if prop == "" || mode == "set" {
 			return true // flag, or any value accepted
 		}
+		if strings.Contains(display, ",") || strings.Contains(propStr, ",") {
+			return itemsSubset(propStr, display) // comma lists compare as sets
+		}
 	}
 	if mode == "set" {
 		return display != ""
+	}
+	if ce, pe, ok := intFields(display, propStr); ok {
+		if len(ce) != len(pe) {
+			return false
+		}
+		for i := range ce {
+			c := ce[i].Cmp(pe[i])
+			switch {
+			case mode == "gte" && c < 0, mode == "lte" && c > 0, mode != "gte" && mode != "lte" && c != 0:
+				return false
+			}
+		}
+		return true
 	}
 	cn, cok := asNums(cur)
 	pn, pok := asNums(prop)
@@ -579,4 +734,120 @@ func renderAdvice(text string, in Input, rec Recommendation, item, current any) 
 		return text
 	}
 	return buf.String()
+}
+
+// argv0Name is the basename of argv[0]; a setproctitle-style
+// "nginx: master process" yields "nginx".
+func argv0Name(a0 string) string {
+	f := strings.Fields(a0)
+	if len(f) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(filepath.Base(f[0]), ":")
+}
+
+// itemsSubset reports whether every comma-separated item of want is in have.
+func itemsSubset(want, have string) bool {
+	set := map[string]bool{}
+	for _, e := range strings.Split(have, ",") {
+		set[strings.TrimSpace(e)] = true
+	}
+	for _, e := range strings.Split(want, ",") {
+		if !set[strings.TrimSpace(e)] {
+			return false
+		}
+	}
+	return true
+}
+
+// intFields parses both whitespace-separated strings as exact integers.
+func intFields(a, b string) (x, y []*big.Int, ok bool) {
+	parse := func(s string) []*big.Int {
+		fs := strings.Fields(s)
+		if len(fs) == 0 {
+			return nil
+		}
+		out := make([]*big.Int, len(fs))
+		for i, f := range fs {
+			n, good := new(big.Int).SetString(f, 10)
+			if !good {
+				return nil
+			}
+			out[i] = n
+		}
+		return out
+	}
+	if x, y = parse(a), parse(b); x == nil || y == nil {
+		return nil, nil, false
+	}
+	return x, y, true
+}
+
+// exactString formats an expression result without float64 rounding: ints
+// and integral floats print as exact integers. ok is false when v is not a
+// number or a list of numbers (strings with non-numeric tokens included).
+func exactString(v any) (string, bool) {
+	switch x := v.(type) {
+	case string:
+		toks := strings.Fields(x)
+		if len(toks) == 0 {
+			return "", false
+		}
+		parts := make([]string, len(toks))
+		for i, t := range toks {
+			s, ok := numToken(t)
+			if !ok {
+				return "", false
+			}
+			parts[i] = s
+		}
+		return strings.Join(parts, " "), true
+	case []any:
+		parts := make([]string, len(x))
+		for i, e := range x {
+			s, ok := exactString(e)
+			if !ok {
+				return "", false
+			}
+			parts[i] = s
+		}
+		return strings.Join(parts, " "), len(parts) > 0
+	case []float64:
+		parts := make([]string, len(x))
+		for i, e := range x {
+			parts[i] = fmtNum(e)
+		}
+		return strings.Join(parts, " "), len(parts) > 0
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprint(x), true
+	case float32:
+		return fmtNum(float64(x)), true
+	case float64:
+		return fmtNum(x), true
+	}
+	return "", false
+}
+
+func numToken(tok string) (string, bool) {
+	if n, ok := new(big.Int).SetString(tok, 10); ok {
+		return n.String(), true
+	}
+	f, err := strconv.ParseFloat(tok, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return "", false
+	}
+	return fmtNum(f), true
+}
+
+// fmtNum prints integral floats below 2^64 as exact integers.
+func fmtNum(f float64) string {
+	if f == math.Trunc(f) {
+		switch {
+		case f >= 0 && f < 1<<64:
+			return strconv.FormatUint(uint64(f), 10)
+		case f < 0 && f >= -(1<<63):
+			return strconv.FormatInt(int64(f), 10)
+		}
+	}
+	return formatFloat(f)
 }

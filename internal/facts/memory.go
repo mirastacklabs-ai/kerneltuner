@@ -74,3 +74,32 @@ func collectMemory(r Root, f *Facts) {
 		}
 	}
 }
+
+// collectSwaps parses /proc/swaps. A missing file means no swap data and is
+// not worth a warning.
+func collectSwaps(r Root, f *Facts) {
+	b, err := os.ReadFile(filepath.Join(r.Proc, "swaps"))
+	if err != nil {
+		return
+	}
+	f.Swaps = parseSwaps(string(b))
+}
+
+func parseSwaps(s string) []Swap {
+	var out []Swap
+	for i, line := range strings.Split(s, "\n") {
+		fs := strings.Fields(line)
+		if i == 0 && len(fs) > 0 && fs[0] == "Filename" {
+			continue
+		}
+		if len(fs) < 5 {
+			continue
+		}
+		path := strings.ReplaceAll(fs[0], `\040`, " ")
+		out = append(out, Swap{
+			Path: path, Type: fs[1], SizeKB: atou(fs[2]), Priority: atoi(fs[4]),
+			Zram: strings.HasPrefix(filepath.Base(path), "zram"),
+		})
+	}
+	return out
+}

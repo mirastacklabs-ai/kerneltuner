@@ -1,25 +1,30 @@
-# Engine issues reported by pack agents (fix in one pass after wave 3)
-- [nvidia] serviceRunning matches Proc.Comm == name; comm truncated to 15 chars (nvidia-persistenced -> nvidia-persiste). Match comm prefix or argv[0] basename.
-- [nvidia] workload.App.Unit only from .service cgroup; containerised apps (.scope docker/containerd) have empty Unit and no container flag. Add App.Container / runtime detection from cgroup.
-- [nvidia] rules/README.md: document that string `recommend` values must be quoted expr strings ('"running"').
-- [nvidia] accel.Classify drops 0x0680 bridges -> NVSwitch undetectable (Fabric Manager rule skipped).
-- [limits] Float formatting of proposed loses precision for huge values (9223372036854775807 -> 9223372036854776000). Format integers exactly.
-- [limits] App.NoFileSoft = min across PIDs misleads (nginx master 1024, workers raised). Consider per-process view / max of workers.
-- [limits] pow2ceil requires float arg; make numeric helpers accept int (expr) or document.
-- [cpu-inf] Facts.Procs has no environ (by design for privacy) -> OMP_/ONEDNN_ envs invisible; keep, document.
-- [cpu-inf] runtime rules always 'recommend' when applicable; no ok state. Consider `detect`-style ok for runtime (advice satisfied).
-- [cpu-inf] scan on materialized fixture prints "cannot scan PCI devices" warning noise.
-- [overlap] app.vllm.ipc-lock and ai.rdma.memlock both target vllm.service LimitMEMLOCK -> dedupe recommendations by (kind,param,target) in advisor or merge rules.
-- [perf] rules golden test took 57-140s; will grow with 26 more apps. Cache materialized fixtures per test run.
-- [memory/cpu] No `foreach: cpu`; governor/EPP can only be runtime advice (no ok state). Add foreach cpu.
-- [memory/cpu] No facts for /sys/devices/system/cpu/vulnerabilities/*, /proc/swaps (zram detection), per-process CPU affinity.
-- [memory/cpu] Evidence never changes status, only score; metric gating must be in applies.when/detect. Document or add `require_evidence`.
-- [memory/cpu] `scan --root` cannot inject fixture values/rates; add a hidden `--fixture NAME` dev flag for scan.
-- [amd] No Host.Distro fact (from /etc/os-release); Gaudi "Ubuntu 6.8" rule approximated via release suffix.
-- [amd] cmdline parse: `pci=realloc=off,nommconf` → key pci value "realloc=off,nommconf"; compare should handle comma-lists.
-- [amd] RoCE netdevs only under infiniband/.../device/net are not in Facts.NICs (gpu-8xmi300x fixture).
-- [network] rps_cpus readback format assumption (zero-padded hex mask) unverified; check apply verify.
-- [network] Stock 10G+ hosts get 4 medium-risk recs from tuned network-throughput values (rmem/wmem/slow_start/notsent_lowat); consider gating on evidence.
+# Engine issues reported by pack agents
+
+Status after the engine fix pass. Behaviour is documented in `docs/DESIGN.md` ("Engine amendments") and `rules/README.md`.
+
+- [nvidia] serviceRunning matched `Proc.Comm == name` only. **FIXED**: comm (with the 15-char truncation prefix), argv[0] basename and unit name.
+- [nvidia] workload.App.Unit only from .service cgroup; no container flag. **FIXED**: `Proc.Container` / `App.Container` (docker, containerd, crio, podman) from the cgroup path, plus `appContainer(name)`. `App.Unit` is deliberately still service-only.
+- [nvidia] document quoted string `recommend` values. **FIXED**: `rules/README.md`.
+- [nvidia] accel.Classify drops 0x0680 bridges (NVSwitch undetectable). **FIXED**: `Accelerator.Kind` (`gpu`, `nvswitch`, `npu`), `accelCount` counts no NVSwitch, new `accelKindCount(vendor, kind)`.
+- [limits] float formatting of large integers. **FIXED**: proposed values and integer comparisons are exact.
+- [limits] App.NoFileSoft = min across PIDs misleads. **FIXED** (additive): `App.NoFileSoftMax` is the max across PIDs; `NoFileSoft` stays the min so existing rules are unchanged. Rules that care about workers should switch to the new field.
+- [limits] pow2ceil requires float arg. **FIXED**: `pow2ceil`, `clamp`, `bytes` accept ints and floats; `max`/`min` already did.
+- [cpu-inf] Facts.Procs has no environ. **WONTFIX**: by design (privacy); documented in `rules/README.md`.
+- [cpu-inf] runtime rules always `recommend`. **FIXED**: optional `detect` on `runtime` and `service` (true = recommend, false = ok); no `detect` keeps today's behaviour.
+- [cpu-inf] "cannot scan PCI devices" noise on fixtures. **FIXED**: only real read errors warn.
+- [overlap] duplicate recommendations for one (kind, param, target). **FIXED**: `advisor.Reconcile` merges them in `generate` and `apply` (gte max, lte min, eq/string conflict warns and picks the highest score; every rule id in the comment); `scan` and JSON keep all of them; the text report adds a `conflicts:` line.
+- [perf] golden tests 57-140s. **FIXED**: fixtures are materialized and collected once per run, in parallel; fixture validation is memoized (rules package about 35s to about 11s on a loaded host).
+- [memory/cpu] no `foreach: cpu`. **FIXED**: `foreach: cpu` plus `foreach_summary: true` (Target `cpu0-63 (64)`, `Targets` list, apply writes each CPU).
+- [memory/cpu] no facts for CPU vulnerabilities, /proc/swaps. **FIXED**: `CPU.Vulnerabilities`, `Facts.Swaps` (zram detection), also `CPU.IDs`, `fs.inotify.*` and `net.bridge.*` sysctls. Per-process CPU affinity: **WONTFIX** for now (needs `/proc/<pid>/status` parsing per process; no rule needs it yet).
+- [memory/cpu] evidence never changes status. **FIXED**: documented, plus optional `require_evidence: true`.
+- [memory/cpu] `scan --root` cannot inject fixture values/rates. **FIXED**: hidden `--fixture NAME` on `scan`, `generate`, `apply`.
+- [amd] no Host.Distro. **FIXED**: `Host.Distro{ID, VersionID}`. The Gaudi rule can switch from the release-suffix approximation; that is a rule change, not done here.
+- [amd] cmdline comma lists. **FIXED**: set comparison for comma values and `cmdlineHas(key, item)`.
+- [amd] RoCE netdevs only under infiniband/.../device/net missing from NICs. **FIXED**.
+- [network] rps_cpus readback format (zero-padded hex mask) unverified. **WONTFIX** here: needs a real kernel; apply's verify compares whitespace-normalised text and rolls back on mismatch, so a wrong guess fails safe. Revisit with a real host capture.
+- [network] stock 10G+ hosts get 4 medium-risk recs from tuned values. **FIXED** in the engine: `require_evidence: true` is available; adding it to those rules is a pack change (not done here, rule YAML is out of scope for this pass).
+
+## Open — reported by app-pack authors after the fix pass
 - [envoy/httpd] No mount table / fstype facts (NFS sendfile advice impossible).
 - [envoy/httpd] No app config parsing; rules gate on host symptoms only (by design for v1).
 - [postgres] Need per-process oom_score_adj fact (/proc/<pid>/oom_score_adj) so oom advice can be ok.

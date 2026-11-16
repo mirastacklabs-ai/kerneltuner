@@ -13,6 +13,7 @@ func collectCPU(r Root, f *Facts) {
 
 	sysCPU := filepath.Join(r.Sys, "devices/system/cpu")
 	ids := numberedDirs(sysCPU, "cpu")
+	c.IDs = ids
 	pkgs := map[string]bool{}
 	cores := map[string]bool{}
 	for _, id := range ids {
@@ -45,6 +46,13 @@ func collectCPU(r Root, f *Facts) {
 	c.Governor = readOpt(filepath.Join(cf, "scaling_governor"))
 	c.EPP = readOpt(filepath.Join(cf, "energy_performance_preference"))
 	c.IdleDriver = readOpt(filepath.Join(sysCPU, "cpuidle/current_driver"))
+	if ents, err := os.ReadDir(filepath.Join(sysCPU, "vulnerabilities")); err == nil {
+		for _, e := range ents {
+			if v, err := readStr(filepath.Join(sysCPU, "vulnerabilities", e.Name())); err == nil {
+				c.Vulnerabilities[e.Name()] = v
+			}
+		}
+	}
 }
 
 // parseCPUInfo fills Vendor, Model and Flags from the first processor block.

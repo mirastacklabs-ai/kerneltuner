@@ -13,6 +13,7 @@ import (
 var SysctlDirs = []string{
 	"net/core", "net/ipv4", "net/netfilter", "vm", "kernel", "fs",
 	"net/ipv4/conf/all", "net/ipv4/conf/default",
+	"fs/inotify", "net/bridge",
 }
 
 func collectSysctl(r Root, f *Facts) {
@@ -95,6 +96,7 @@ func collectProcs(r Root, f *Facts) {
 		p.OpenFDs = countFDs(filepath.Join(dir, "fd"))
 		if b, err := os.ReadFile(filepath.Join(dir, "cgroup")); err == nil {
 			p.Unit = unitFromCgroup(string(b))
+			p.Container = containerFromCgroup(string(b))
 		}
 		f.Procs = append(f.Procs, p)
 	}
@@ -158,6 +160,34 @@ func unitFromCgroup(cg string) string {
 		for i := len(els) - 1; i >= 0; i-- {
 			if strings.HasSuffix(els[i], ".service") {
 				return els[i]
+			}
+		}
+	}
+	return ""
+}
+
+// containerFromCgroup derives the container runtime from cgroup paths such as
+// .../docker-<id>.scope, .../cri-containerd-<id>.scope, .../crio-<id>.scope,
+// .../libpod-<id>.scope or cgroup v1 /docker/<id>. "" when none matches.
+func containerFromCgroup(cg string) string {
+	for _, line := range strings.Split(cg, "\n") {
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		els := strings.Split(parts[2], "/")
+		for i, el := range els {
+			switch {
+			case strings.HasPrefix(el, "docker-") && strings.HasSuffix(el, ".scope"):
+				return "docker"
+			case strings.HasPrefix(el, "cri-containerd-"):
+				return "containerd"
+			case strings.HasPrefix(el, "crio-"):
+				return "crio"
+			case strings.HasPrefix(el, "libpod-"):
+				return "podman"
+			case el == "docker" && i+1 < len(els) && els[i+1] != "":
+				return "docker"
 			}
 		}
 	}

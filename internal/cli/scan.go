@@ -62,6 +62,7 @@ func newScanCmd(g *globalOpts) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer p.Close()
 			values, rates, err := p.sample(cmdContext(cmd), sampleDur)
 			if err != nil {
 				return err
@@ -81,6 +82,7 @@ func newScanCmd(g *globalOpts) *cobra.Command {
 			return nil
 		},
 	}
+	addFixtureFlag(cmd, g)
 	cmd.Flags().Duration("sample", 0, "sample live counters for this long to compute rates")
 	cmd.Flags().Bool("all", false, "include ok, not-applicable and managed results")
 	cmd.Flags().String("fail-on", "", "exit 2 if recommend/firing at risk >= LEVEL (low|medium|high); off by default")
