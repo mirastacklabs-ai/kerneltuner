@@ -23,9 +23,21 @@
     compare tokens/s and p99 before and after.
   verify: "scaling_cur_freq tracks cpuinfo_max_freq under load; throughput or p99 latency improves enough to justify the power"
   sources:
-    - https://docs.kernel.org/admin-guide/pm/cpufreq.html
-    - https://docs.kernel.org/admin-guide/pm/intel_pstate.html
-    - https://docs.kernel.org/admin-guide/pm/amd-pstate.html
+    - url: https://docs.kernel.org/admin-guide/pm/cpufreq.html
+      section: "Generic Scaling Governors: performance"
+      quote: >-
+        When attached to a policy object, this governor causes the highest frequency, within the
+        scaling_max_freq policy limit, to be requested for that policy.
+    - url: https://docs.kernel.org/admin-guide/pm/intel_pstate.html
+      section: HWP + performance
+      quote: >-
+        In this configuration intel_pstate will write 0 to the processor’s Energy-Performance Preference (EPP)
+        knob (if supported) or its Energy-Performance Bias (EPB) knob (otherwise)
+    - url: https://docs.kernel.org/admin-guide/pm/amd-pstate.html
+      section: Key Governors Support
+      quote: >-
+        amd-pstate can be used with all the (generic) scaling governors listed by the
+        scaling_available_governors policy attribute in sysfs.
   tests:
     - fixture: cpu-amx-2s
       expect: { status: recommend }
@@ -61,10 +73,24 @@
     package power before keeping it. Per-state control also exists in cpuN/cpuidle/stateM/disable.
   verify: "wakeup-latency p99.9 drops; /sys/devices/system/cpu/cpu*/cpuidle/state*/usage stops growing for the deep states"
   sources:
-    - https://docs.kernel.org/admin-guide/pm/cpuidle.html
-    - https://docs.kernel.org/power/pm_qos_interface.html
-    - https://docs.kernel.org/admin-guide/pm/intel_idle.html
-    - https://docs.kernel.org/admin-guide/kernel-parameters.html
+    - url: https://docs.kernel.org/admin-guide/pm/cpuidle.html
+      section: Power Management Quality of Service for CPUs
+      quote: >-
+        opening the cpu_dma_latency special device file causes a new PM QoS request to be created and added to a
+        global priority list of CPU latency limit requests
+    - url: https://docs.kernel.org/power/pm_qos_interface.html
+      section: "PM QoS framework: From user space"
+      quote: >-
+        As long as the device node is held open that process has a registered request on the parameter.
+    - url: https://docs.kernel.org/admin-guide/pm/intel_idle.html
+      section: Kernel Command Line Options and Module Parameters
+      quote: >-
+        Setting max_cstate to 0 causes the intel_idle initialization to fail.
+    - url: https://docs.kernel.org/admin-guide/kernel-parameters.html
+      section: intel_idle.max_cstate=
+      quote: >-
+        intel_idle.max_cstate= [KNL,HW,ACPI,X86] 0 disables intel_idle and fall back on acpi_idle. 1 to 9
+        specify maximum depth of C-state.
   tests:
     - fixture: cpu-haproxy-deep-cstates
       expect: { status: recommend }
@@ -92,7 +118,11 @@
     file reads forceoff). Keep it on if your security policy relies on it being on, and keep it off if it relies on off.
   verify: "compare throughput and p99 with SMT on and off under the same thread-pinning"
   sources:
-    - https://docs.kernel.org/admin-guide/abi-testing.html
+    - url: https://docs.kernel.org/admin-guide/abi-testing.html
+      section: /sys/devices/system/cpu/smt/control
+      quote: >-
+        active: Tells whether SMT is active (enabled and siblings online) control: Read/write interface to
+        control SMT.
   tests:
     - fixture: cpu-amx-2s
       expect: { status: firing }
@@ -119,8 +149,17 @@
     change the layout without rebooting.
   verify: "isolated CPUs show no unexpected interrupts or tick activity under load; housekeeping CPUs are not saturated"
   sources:
-    - https://docs.kernel.org/admin-guide/kernel-parameters.html
-    - https://docs.kernel.org/timers/no_hz.html
+    - url: https://docs.kernel.org/admin-guide/kernel-parameters.html
+      section: isolcpus= (domain flag)
+      quote: >-
+        Note that performing domain isolation this way is irreversible: it's not possible to bring back a CPU to
+        the domains once isolated through this boot time configuration. Use cpusets for a dynamic configuration
+        which can be altered at runtime.
+    - url: https://docs.kernel.org/timers/no_hz.html
+      section: Omit Scheduling-Clock Ticks For CPUs With Only One Runnable Task
+      quote: >-
+        At least one non-adaptive-tick CPU must remain online to handle timekeeping tasks in order to ensure
+        that system calls like gettimeofday() returns accurate values on adaptive-tick CPUs.
   tests:
     - fixture: cpu-isolcpus-nohz
       expect: { status: firing }
@@ -145,9 +184,21 @@
     mitigations=off otherwise.
   verify: "files under /sys/devices/system/cpu/vulnerabilities/ read Mitigation or Not affected, not Vulnerable"
   sources:
-    - https://docs.kernel.org/admin-guide/kernel-parameters.html
-    - https://docs.kernel.org/admin-guide/hw-vuln/index.html
-    - https://docs.kernel.org/admin-guide/abi-testing.html
+    - url: https://docs.kernel.org/admin-guide/kernel-parameters.html
+      section: mitigations=
+      quote: >-
+        Disable all optional CPU mitigations. This improves system performance, but it may also expose users to
+        several CPU vulnerabilities.
+    - url: https://docs.kernel.org/admin-guide/hw-vuln/index.html
+      section: Hardware vulnerabilities
+      quote: >-
+        This section describes CPU vulnerabilities and provides an overview of the possible mitigations along
+        with guidance for selecting mitigations if they are configurable at compile, boot or run time.
+    - url: https://docs.kernel.org/admin-guide/abi-testing.html
+      section: /sys/devices/system/cpu/vulnerabilities
+      quote: >-
+        “Not affected” CPU is not affected by the vulnerability “Vulnerable” CPU is affected and no mitigation
+        in effect “Mitigation: $M” CPU is affected and mitigation $M is in effect
   tests:
     - fixture: cpu-mitigations-off
       expect: { status: firing }

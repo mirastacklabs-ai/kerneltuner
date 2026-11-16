@@ -21,9 +21,20 @@
     only in the initial netns. bpftune also tunes it.
   verify: "softnet.dropped rate returns to 0 after re-measuring; if not, raise by another doubling or fix IRQ and RPS spread"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/net.html
-    - https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
-    - https://github.com/oracle/bpftune
+    - url: https://docs.kernel.org/admin-guide/sysctl/net.html
+      section: netdev_max_backlog
+      quote: >-
+        Maximum number of packets, queued on the INPUT side, when the interface receives packets faster than
+        kernel can process them.
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
+      section: net_hotdata
+      quote: >-
+        .max_backlog = 1000,
+    - url: https://raw.githubusercontent.com/oracle/bpftune/main/docs/bpftune-net-buffer.rst
+      section: DESCRIPTION
+      quote: >-
+        On fast connections (10Gb/s or higher) the default backlog length of 1024 can be insufficient; here the
+        backlog length is increased if 1/32 of current backlog size in the last minute is dropped
   tests:
     - fixture: network-25g-backlog-drops
       expect: { status: recommend, proposed: "2000" }
@@ -57,9 +68,18 @@
     time rises.
   verify: "softnet.time_squeeze rate returns to 0 without a rise in scheduling latency"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/net.html
-    - https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
-    - https://github.com/oracle/bpftune
+    - url: https://docs.kernel.org/admin-guide/sysctl/net.html
+      section: netdev_budget
+      quote: >-
+        Maximum number of packets taken from all interfaces in one polling cycle (NAPI poll).
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
+      section: net_hotdata
+      quote: >-
+        .netdev_budget = 300,
+    - url: https://raw.githubusercontent.com/oracle/bpftune/main/docs/bpftune-net-buffer.rst
+      section: DESCRIPTION
+      quote: >-
+        if we see increases in time_squeezed, bump netdev_budget/netdev_budget_usecs.
   tests:
     - fixture: network-25g-backlog-drops
       expect: { status: recommend, proposed: "600" }
@@ -91,10 +111,23 @@
     and persistent squeeze points at IRQ spread rather than budget.
   verify: "softnet.time_squeeze rate returns to 0 without a rise in scheduling latency"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/net.html
-    - https://kernelnewbies.org/Linux_4.12
-    - https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
-    - https://github.com/oracle/bpftune
+    - url: https://docs.kernel.org/admin-guide/sysctl/net.html
+      section: netdev_budget_usecs
+      quote: >-
+        Maximum number of microseconds in one NAPI polling cycle.
+    - url: https://kernelnewbies.org/Linux_4.12
+      section: Networking
+      quote: >-
+        The new sysctl, netdev_budget_usecs, allows to set the maximum number of microseconds in one NAPI
+        polling cycle
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
+      section: net_hotdata
+      quote: >-
+        .netdev_budget_usecs = 2 * USEC_PER_SEC / HZ,
+    - url: https://raw.githubusercontent.com/oracle/bpftune/main/docs/bpftune-net-buffer.rst
+      section: DESCRIPTION
+      quote: >-
+        if we see increases in time_squeezed, bump netdev_budget/netdev_budget_usecs.
   tests:
     - fixture: network-25g-backlog-drops
       expect: { status: recommend, proposed: "4000" }

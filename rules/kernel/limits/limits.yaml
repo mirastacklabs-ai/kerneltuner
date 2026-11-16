@@ -17,8 +17,15 @@
     fs.file-max is the global cap on allocated file handles; when it is hit the kernel logs "VFS: file-max limit <n> reached" and open()/accept() fail with ENFILE. The kernel sizes the default from RAM, and systemd (since v240) bumps it to the maximum, so a modern host rarely needs this; it only matters when someone lowered it or an old/embedded host still has a small value. The rule stays quiet until the first number in /proc/sys/fs/file-nr passes 80% of the limit, then proposes doubling (a headroom formula, not a measured optimum).
   verify: "The first field of /proc/sys/fs/file-nr stays well below fs.file-max and 'VFS: file-max limit' no longer appears in dmesg"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/fs.html
-    - https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+    - url: https://docs.kernel.org/admin-guide/sysctl/fs.html
+      section: "file-max & file-nr"
+      quote: >-
+        The value in file-max denotes the maximum number of file- handles that the Linux kernel will allocate.
+    - url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+      section: CHANGES WITH 240
+      quote: >-
+        The fs.nr_open and fs.file-max sysctls are now automatically bumped to the highest possible values, as
+        separate accounting of file descriptors is no longer necessary
   tests:
     - fixture: limits-file-max-pressure
       expect: { status: recommend, proposed: "524288" }
@@ -40,8 +47,16 @@
     fs.nr_open is the highest value any process can set RLIMIT_NOFILE (and therefore systemd LimitNOFILE=) to; the kernel default is 1048576 and systemd v240+ raises it to the maximum. A value below the default silently caps every service's LimitNOFILE, so raise it first if a unit asks for more than it allows. Hosts at or above the default get no recommendation.
   verify: "systemctl show <unit> -p LimitNOFILE matches the intended value after daemon-reload and restart"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/fs.html
-    - https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+    - url: https://docs.kernel.org/admin-guide/sysctl/fs.html
+      section: nr_open
+      quote: >-
+        This denotes the maximum number of file-handles a process can allocate. Default value is 1024*1024
+        (1048576) which should be enough for most machines.
+    - url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+      section: CHANGES WITH 240
+      quote: >-
+        The fs.nr_open and fs.file-max sysctls are now automatically bumped to the highest possible values, as
+        separate accounting of file descriptors is no longer necessary
   tests:
     - fixture: limits-nr-open-lowered
       expect: { status: recommend, proposed: "1048576" }
@@ -64,9 +79,21 @@
     The kernel default soft RLIMIT_NOFILE is 1024 and systemd deliberately keeps the soft limit at 1024 (hard 512K since v240) because select() cannot handle fds >= 1024; programs must opt in by raising their own soft limit. When one process of a service already holds more than half of its soft limit, a traffic burst ends in EMFILE ("too many open files"). The proposal is 4x the busiest process's current fd count rounded up to a power of two, capped at fs.nr_open; keep the hard limit well below 1G because some software (Java) allocates per-fd arrays.
   verify: "cat /proc/<pid>/limits shows the new soft limit and the process's open fd count stays below half of it"
   sources:
-    - https://raw.githubusercontent.com/systemd/systemd/main/NEWS
-    - https://0pointer.net/blog/file-descriptor-limits.html
-    - https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html
+    - url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+      section: CHANGES WITH 240
+      quote: >-
+        With this systemd release the hard limit systemd passes on is increased to 512K, overriding the kernel's
+        defaults and substantially increasing the number of simultaneous file descriptors unprivileged userspace
+        processes can allocate.
+    - url: https://0pointer.net/blog/file-descriptor-limits.html
+      section: File Descriptor Limits
+      quote: >-
+        TL;DR: don't use select() + bump the RLIMIT_NOFILE soft limit to the hard limit in your modern programs.
+    - url: https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html
+      section: LimitNOFILE=
+      quote: >-
+        Be careful when raising the soft limit above 1024, since select(2) cannot function with file descriptors
+        above 1023 on Linux.
   tests:
     - fixture: limits-nginx-fd-pressure
       expect: { status: recommend, proposed: "4096", target: nginx.service }

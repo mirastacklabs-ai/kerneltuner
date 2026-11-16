@@ -1,40 +1,50 @@
 - url: https://docs.kernel.org/admin-guide/pm/cpufreq.html
   project: linux
+  title: CPU Performance Scaling
   covers: cpufreq governors (performance, powersave, schedutil)
   last_reviewed: "2026-11-16"
 - url: https://docs.kernel.org/admin-guide/pm/intel_pstate.html
   project: linux
+  title: intel_pstate CPU Performance Scaling Driver
   covers: intel_pstate HWP + performance forces EPP 0 and rejects EPP writes; EPP hints
   last_reviewed: "2026-11-16"
 - url: https://docs.kernel.org/admin-guide/pm/amd-pstate.html
   project: linux
+  title: amd-pstate CPU Performance Scaling Driver
   covers: amd-pstate works with the generic cpufreq governors
   last_reviewed: "2026-11-16"
 - url: https://docs.kernel.org/admin-guide/pm/cpuidle.html
   project: linux
+  title: CPU Idle Time Management
   covers: cpuidle governors, per-state sysfs, PM QoS via /dev/cpu_dma_latency
-  last_reviewed: "2026-11-16"
-- url: https://docs.kernel.org/admin-guide/pm/intel_idle.html
-  project: linux
-  covers: intel_idle.max_cstate (0 makes init fail)
   last_reviewed: "2026-11-16"
 - url: https://docs.kernel.org/power/pm_qos_interface.html
   project: linux
+  title: PM Quality Of Service Interface
   covers: /dev/cpu_dma_latency request lifetime tied to the open file descriptor
+  last_reviewed: "2026-11-16"
+- url: https://docs.kernel.org/admin-guide/pm/intel_idle.html
+  project: linux
+  title: intel_idle CPU Idle Time Management Driver
+  covers: intel_idle.max_cstate (0 makes init fail)
   last_reviewed: "2026-11-16"
 - url: https://docs.kernel.org/admin-guide/kernel-parameters.html
   project: linux
+  title: "The kernel’s command-line parameters"
   covers: isolcpus, nohz_full, mitigations=, intel_idle.max_cstate
+  last_reviewed: "2026-11-16"
+- url: https://docs.kernel.org/admin-guide/abi-testing.html
+  project: linux
+  title: ABI testing symbols
+  covers: /sys/devices/system/cpu/smt/{active,control} and /sys/devices/system/cpu/vulnerabilities/*
   last_reviewed: "2026-11-16"
 - url: https://docs.kernel.org/timers/no_hz.html
   project: linux
+  title: "NO_HZ: Reducing Scheduling-Clock Ticks"
   covers: adaptive-ticks CPUs, nohz_full, RCU offload, timekeeping CPU
   last_reviewed: "2026-11-16"
 - url: https://docs.kernel.org/admin-guide/hw-vuln/index.html
   project: linux
+  title: Hardware vulnerabilities
   covers: hardware vulnerability documentation index
-  last_reviewed: "2026-11-16"
-- url: https://docs.kernel.org/admin-guide/abi-testing.html
-  project: linux
-  covers: /sys/devices/system/cpu/smt/{active,control} and /sys/devices/system/cpu/vulnerabilities/*
   last_reviewed: "2026-11-16"

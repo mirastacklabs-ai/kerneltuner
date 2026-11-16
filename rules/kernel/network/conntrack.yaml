@@ -25,7 +25,11 @@
     nf_conntrack is loaded.
   verify: "conntrack.count stays below 80% of nf_conntrack_max and dmesg has no 'table full' lines"
   sources:
-    - https://docs.kernel.org/networking/nf_conntrack-sysctl.html
+    - url: https://docs.kernel.org/networking/nf_conntrack-sysctl.html
+      section: nf_conntrack_max
+      quote: >-
+        Maximum number of allowed connection tracking entries. This value is set to nf_conntrack_buckets by
+        default.
   tests:
     - fixture: network-conntrack-full
       expect: { status: recommend, proposed: "524288" }

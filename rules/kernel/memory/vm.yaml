@@ -24,8 +24,16 @@
     `cat /proc/swaps`: apply this only if swap is on zram/zswap, never when it is on a slow disk.
   verify: "psi.memory.some.avg10 does not rise; pswpin/pswpout in /proc/vmstat and application latency stay flat or improve"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
-    - https://kernelnewbies.org/Linux_5.8
+    - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+      section: swappiness
+      quote: >-
+        For in-memory swap, like zram or zswap, as well as hybrid setups that have swap on faster devices than
+        the filesystem, values beyond 100 can be considered.
+    - url: https://kernelnewbies.org/Linux_5.8
+      section: Memory management
+      quote: >-
+        The swapiness sysctl can also now be raised up to 200 to force the kernel to use swapping, which can be
+        useful with in-memory swap, like zram or zswap.
   tests:
     - fixture: memory-zram-swap
       expect: { status: recommend, proposed: "133" }
@@ -60,8 +68,17 @@
     recommended here. Leave it alone on read-mostly hosts (for example model loading), where it is irrelevant.
   verify: "psi.io.some.avg10 and psi.io.full.avg10 fall; Dirty/Writeback in /proc/meminfo stay below the new limits"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
-    - https://docs.kernel.org/accounting/psi.html
+    - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+      section: dirty_ratio
+      quote: >-
+        Contains, as a percentage of total available memory that contains free pages and reclaimable pages, the
+        number of pages at which a process which is generating disk writes will itself start writing out dirty
+        data.
+    - url: https://docs.kernel.org/accounting/psi.html
+      section: Monitoring for pressure thresholds
+      quote: >-
+        For example writing “some 150000 1000000” into /proc/pressure/memory would add 150ms threshold for
+        partial memory stall measured within 1sec time window.
   tests:
     - fixture: memory-gpu-vm-misconfigured
       expect: { status: firing }
@@ -89,7 +106,11 @@
     user_reserve_kbytes as the doc says to for mode 2 so root can still log in and recover.
   verify: "mmap/malloc ENOMEM disappears while MemAvailable is large; Committed_AS stays below CommitLimit in /proc/meminfo"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+      section: overcommit_memory
+      quote: >-
+        When this flag is 2, the kernel uses a “never overcommit” policy that attempts to prevent any overcommit
+        of memory.
   tests:
     - fixture: memory-gpu-vm-misconfigured
       expect: { status: firing }
@@ -112,7 +133,11 @@
     real concern, raise vm.watermark_scale_factor instead of min_free_kbytes.
   verify: "cat /proc/sys/vm/min_free_kbytes is at or above the boot-time default"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+      section: min_free_kbytes
+      quote: >-
+        if you set this to lower than 1024KB, your system will become subtly broken, and prone to deadlock under
+        high loads.
   tests:
     - fixture: memory-gpu-vm-misconfigured
       expect: { status: firing }
@@ -142,7 +167,12 @@
     smaller page cache. Do not touch min_free_kbytes for this.
   verify: "rate of vmstat allocstall* and kswapd_low_wmark_hit_quickly falls to ~0; psi.memory.some.avg10 falls"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+      section: watermark_scale_factor
+      quote: >-
+        A high rate of threads entering direct reclaim (allocstall) or kswapd going to sleep prematurely
+        (kswapd_low_wmark_hit_quickly) can indicate that the number of free pages kswapd maintains for latency
+        reasons is too small for the allocation bursts occurring in the system.
   tests:
     - fixture: memory-pressure-stall
       expect: { status: firing }
@@ -171,7 +201,11 @@
     numa_miss/numa_foreign/other_node in numastat before deciding.
   verify: "page cache stays large (Cached in /proc/meminfo); no reclaim stalls (allocstall rate 0)"
   sources:
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+      section: zone_reclaim_mode
+      quote: >-
+        For file servers or workloads that benefit from having their data cached, zone_reclaim_mode should be
+        left disabled as the caching effect is likely to be more important than data locality.
   tests:
     - fixture: memory-gpu-vm-misconfigured
       expect: { status: recommend, proposed: "0" }
@@ -201,7 +235,11 @@
     TLB-bound throughput; no value is right for every workload. Per-process opt-out: prctl(PR_SET_THP_DISABLE).
   verify: "vmstat compact_stall rate falls; tail latency of allocation-heavy services improves; thp_fault_alloc is acceptable for TLB-bound jobs"
   sources:
-    - https://docs.kernel.org/admin-guide/mm/transhuge.html
+    - url: https://docs.kernel.org/admin-guide/mm/transhuge.html
+      section: Global THP controls
+      quote: >-
+        always means that an application requesting THP will stall on allocation failure and directly reclaim
+        pages and compact memory in an effort to allocate a THP immediately.
   tests:
     - fixture: legacy-4.9-c10k
       expect: { status: firing }
@@ -229,8 +267,16 @@
     recommends enabling it right after boot because fragmentation can be permanent), or reserve static hugepages.
   verify: "compact_stall and thp_fault_fallback rates fall"
   sources:
-    - https://docs.kernel.org/admin-guide/mm/transhuge.html
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - url: https://docs.kernel.org/admin-guide/mm/transhuge.html
+      section: Monitoring usage
+      quote: >-
+        compact_stall is incremented every time a process stalls to run memory compaction so that a huge page is
+        free for use.
+    - url: https://docs.kernel.org/admin-guide/mm/transhuge.html
+      section: Monitoring usage
+      quote: >-
+        thp_fault_fallback is incremented if a page fault fails to allocate or charge a huge page and instead
+        falls back to using small pages.
   tests:
     - fixture: memory-thp-compaction-stalls
       expect: { status: firing }
@@ -258,7 +304,11 @@
     zero, expect OOM or heavy refaults soon.
   verify: "psi.memory.some.avg10 and psi.memory.full.avg10 drop below the threshold under the same load"
   sources:
-    - https://docs.kernel.org/accounting/psi.html
+    - url: https://docs.kernel.org/accounting/psi.html
+      section: Pressure interface
+      quote: >-
+        The “full” line indicates the share of time in which all non-idle tasks are stalled on a given resource
+        simultaneously.
   tests:
     - fixture: memory-pressure-stall
       expect: { status: firing }

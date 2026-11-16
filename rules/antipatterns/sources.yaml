@@ -1,16 +1,20 @@
-- url: https://docs.kernel.org/networking/ip-sysctl.html
+- url: https://github.com/torvalds/linux/commit/4396e46187ca5070219b81773c4e65088dac50cc.patch
   project: linux
-  covers: tcp_timestamps, tcp_syncookies, tcp_mem semantics
-  last_reviewed: 2026-11-16
-- url: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4396e46187ca
-  project: linux
-  covers: 'commit "tcp: remove tcp_tw_recycle"'
-  last_reviewed: 2026-11-16
+  title: "tcp: remove tcp_tw_recycle (commit 4396e46187ca)"
+  covers: 'commit "tcp: remove tcp_tw_recycle" message and diff'
+  last_reviewed: "2026-11-16"
 - url: https://kernelnewbies.org/Linux_4.12
   project: linux
+  title: Linux 4.12 - Linux Kernel Newbies
   covers: tcp_tw_recycle and per-destination timestamp cache removed in 4.12
-  last_reviewed: 2026-11-16
-- url: https://github.com/redhat-performance/tuned/tree/master/profiles
+  last_reviewed: "2026-11-16"
+- url: https://docs.kernel.org/networking/ip-sysctl.html
+  project: linux
+  title: IP Sysctl
+  covers: tcp_timestamps, tcp_syncookies, tcp_mem semantics
+  last_reviewed: "2026-11-16"
+- url: https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/network-throughput/tuned.conf
   project: tuned
-  covers: comment warning about oversubscribing memory with network buffers
-  last_reviewed: 2026-11-16
+  title: tuned network-throughput profile (tuned.conf)
+  covers: network-throughput profile values (tcp_rmem, tcp_wmem, tcp_notsent_lowat, tcp_slow_start_after_idle) and the memory-oversubscription warning
+  last_reviewed: "2026-11-16"

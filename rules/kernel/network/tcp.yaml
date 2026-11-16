@@ -20,9 +20,19 @@
     this value.
   verify: "ss -tmi on busy long-RTT connections shows rcv_space growing past the old ceiling; tcp_mem pressure does not appear"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
-    - https://github.com/redhat-performance/tuned/tree/master/profiles
-    - https://github.com/oracle/bpftune
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_rmem
+      quote: >-
+        max: maximal size of receive buffer allowed for automatically selected receiver buffers for TCP socket.
+    - url: https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/network-throughput/tuned.conf
+      section: "[sysctl]"
+      quote: >-
+        net.ipv4.tcp_rmem="4096 131072 16777216"
+    - url: https://raw.githubusercontent.com/oracle/bpftune/main/docs/bpftune-tcp-buffer.rst
+      section: DESCRIPTION
+      quote: >-
+        Similarly, for net.ipv4.tcp_rmem, we monitor and increase the limit when expansion is close to hitting
+        the limit
   tests:
     - fixture: web-16c-64g-nginx
       expect: { status: recommend, proposed: "4096 131072 16777216" }
@@ -54,9 +64,20 @@
     tcp_notsent_lowat for latency-sensitive servers). Only the third field is raised.
   verify: "ss -tmi on busy long-RTT connections shows the send queue growing past the old ceiling; cwnd is no longer buffer-limited"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
-    - https://github.com/redhat-performance/tuned/tree/master/profiles
-    - https://github.com/oracle/bpftune
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_wmem
+      quote: >-
+        max: Maximal amount of memory allowed for automatically tuned send buffers for TCP sockets.
+    - url: https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/network-throughput/tuned.conf
+      section: "[sysctl]"
+      quote: >-
+        net.ipv4.tcp_wmem="4096 16384 16777216"
+    - url: https://raw.githubusercontent.com/oracle/bpftune/main/docs/bpftune-tcp-buffer.rst
+      section: DESCRIPTION
+      quote: >-
+        net.ipv4.tcp_wmem is a triple of min, default, max. By instrumenting tcp_sndbuf_expand() we can see
+        where expansion is close to hitting the max, and we can adjust it up appropriately to allow for
+        additional buffer space.
   tests:
     - fixture: web-16c-64g-nginx
       expect: { status: recommend, proposed: "4096 16384 16777216" }
@@ -90,9 +111,21 @@
     competes unevenly with loss-based flows on a shared bottleneck, so roll it out gradually.
   verify: "Tcp.RetransSegs / Tcp.OutSegs falls and throughput on the affected paths rises; `ss -ti` shows bbr"
   sources:
-    - https://kernelnewbies.org/Linux_4.9
-    - https://github.com/oracle/bpftune
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://kernelnewbies.org/Linux_4.9
+      section: BBR TCP congestion control algorithm
+      quote: >-
+        a new optional BBR TCP congestion control algorithm based on bandwidth measurements instead of packet
+        loss
+    - url: https://raw.githubusercontent.com/oracle/bpftune/main/docs/bpftune-tcp-conn.rst
+      section: DESCRIPTION
+      quote: >-
+        the only auto-selection involved is to use BBR in cases where loss rates exceed 1/(2^DROP_SHIFT) (1.5%)
+        of the packet sent rate
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_congestion_control
+      quote: >-
+        Set the congestion control algorithm to be used for new connections. The algorithm “reno” is always
+        available, but additional choices may be available based on kernel configuration.
   tests:
     - fixture: network-lossy-bbr
       expect: { status: recommend, proposed: "bbr" }
@@ -124,9 +157,18 @@
     verified guidance, so the rule stays silent.
   verify: "`tc qdisc show dev <nic>` lists fq on the interfaces carrying BBR traffic"
   sources:
-    - https://raw.githubusercontent.com/torvalds/linux/master/net/ipv4/tcp_bbr.c
-    - https://kernelnewbies.org/Linux_4.13
-    - https://docs.kernel.org/admin-guide/sysctl/net.html
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/net/ipv4/tcp_bbr.c
+      section: bbr_tso_segs_goal
+      quote: >-
+        With TSQ and departure time pacing at lower layers (e.g. fq),
+    - url: https://kernelnewbies.org/Linux_4.13
+      section: Networking
+      quote: >-
+        Internal implementation for pacing
+    - url: https://docs.kernel.org/admin-guide/sysctl/net.html
+      section: default_qdisc
+      quote: >-
+        The default queuing discipline to use for network devices.
   tests:
     - fixture: network-bbr-default-qdisc
       expect: { status: recommend, proposed: "fq" }
@@ -162,7 +204,16 @@
     in ip_local_reserved_ports. More source IPs or tcp_tw_reuse often help more.
   verify: "connect() stops failing with EADDRNOTAVAIL; `ss -s` TIME_WAIT count stays below half the range"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: ip_local_port_range
+      quote: >-
+        Defines the local port range that is used by TCP and UDP to choose the local port. The first number is
+        the first, the second the last local port number.
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: ip_local_port_range
+      quote: >-
+        Must be greater than or equal to ip_unprivileged_port_start. The default values are 32768 and 60999
+        respectively.
   tests:
     - fixture: network-port-exhaustion
       expect: { status: recommend, proposed: "1024 65535" }
@@ -195,7 +246,12 @@
     when TIME_WAIT sockets exceed half of the local port range and tcp_timestamps is 1 (PAWS needs timestamps).
   verify: "sockstat.tcp.tw falls and connect() no longer fails with EADDRNOTAVAIL; no rise in connection resets"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_tw_reuse
+      quote: >-
+        Enable reuse of TIME-WAIT sockets for new connections when it is safe from protocol viewpoint. 0 -
+        disable 1 - global enable 2 - enable for loopback traffic only It should not be changed without
+        advice/request of technical experts.
   tests:
     - fixture: network-port-exhaustion
       expect: { status: recommend, proposed: "1" }
@@ -223,8 +279,15 @@
     burst into a path that has become congested while the connection was idle.
   verify: "Time to first full-rate response on reused keep-alive connections drops; no rise in retransmits (Tcp.RetransSegs)"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
-    - https://github.com/redhat-performance/tuned/tree/master/profiles
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_slow_start_after_idle
+      quote: >-
+        If enabled, provide RFC2861 behavior and time out the congestion window after an idle period. An idle
+        period is defined at the current RTO.
+    - url: https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/network-throughput/tuned.conf
+      section: "[sysctl]"
+      quote: >-
+        net.ipv4.tcp_slow_start_after_idle=0
   tests:
     - fixture: web-16c-64g-nginx
       expect: { status: recommend, proposed: "0" }
@@ -252,8 +315,15 @@
     so values at or below 131072 are accepted as they are.
   verify: "Per-socket send-queue memory (`ss -tm` tb/skmem) falls; throughput on large transfers is unchanged"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
-    - https://github.com/redhat-performance/tuned/tree/master/profiles
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_notsent_lowat
+      quote: >-
+        poll()/select()/epoll() reports POLLOUT events if the amount of unsent bytes is below a per socket
+        value, and if the write queue is not full.
+    - url: https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/network-throughput/tuned.conf
+      section: "[sysctl]"
+      quote: >-
+        net.ipv4.tcp_notsent_lowat=131072
   tests:
     - fixture: web-16c-64g-nginx
       expect: { status: recommend, proposed: "131072" }

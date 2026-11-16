@@ -22,8 +22,19 @@
     workloads on a shared device.
   verify: "cat /sys/block/<disk>/queue/scheduler shows [none]; fio or application IO latency and CPU per IOPS are not worse"
   sources:
-    - https://raw.githubusercontent.com/torvalds/linux/master/block/elevator.c
-    - https://docs.kernel.org/admin-guide/abi-stable.html
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/block/elevator.c
+      section: elevator_set_default
+      quote: >-
+        For single queue devices, default to using mq-deadline.
+    - url: https://raw.githubusercontent.com/torvalds/linux/master/block/elevator.c
+      section: elevator_set_default
+      quote: >-
+        have multiple queues or mq-deadline is not available, default
+    - url: https://docs.kernel.org/admin-guide/abi-stable.html
+      section: "/sys/block/<disk>/queue/scheduler"
+      quote: >-
+        When read, this file will display the current and available IO schedulers for this block device. The
+        currently active IO scheduler will be enclosed in [] brackets.
   tests:
     - fixture: storage-nvme-mq-deadline
       expect: { status: recommend, proposed: "none", target: nvme0n1 }
@@ -63,8 +74,14 @@
     pre-read the file once or use MADV_WILLNEED in the loader.
   verify: "model load time drops; psi.io.some.avg10 and major-fault rate during load do not rise afterwards under random-read traffic"
   sources:
-    - https://docs.kernel.org/admin-guide/abi-stable.html
-    - https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/throughput-performance/tuned.conf
+    - url: https://docs.kernel.org/admin-guide/abi-stable.html
+      section: "/sys/block/<disk>/queue/read_ahead_kb"
+      quote: >-
+        Maximum number of kilobytes to read-ahead for filesystems on this block device.
+    - url: https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/throughput-performance/tuned.conf
+      section: "[disk]"
+      quote: >-
+        readahead=>4096
   tests:
     - fixture: gpu-8xh100
       expect: { status: recommend, proposed: "4096", target: nvme0n1 }

@@ -14,8 +14,15 @@
     (use tcp_tw_reuse for outbound connections instead). On 4.12 and later the file does not exist.
   verify: "sysctl net.ipv4.tcp_tw_recycle reads 0 (or the file is gone) and clients behind NAT connect reliably"
   sources:
-    - https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4396e46187ca
-    - https://kernelnewbies.org/Linux_4.12
+    - url: https://github.com/torvalds/linux/commit/4396e46187ca5070219b81773c4e65088dac50cc.patch
+      section: Commit message
+      quote: >-
+        The tcp_tw_recycle was already broken for connections behind NAT, since the per-destination timestamp is
+        not monotonically increasing for multiple machines behind a single destination address.
+    - url: https://kernelnewbies.org/Linux_4.12
+      section: Networking
+      quote: >-
+        TCP: remove tcp_tw_recycle sysctl
   tests:
     - fixture: legacy-4.9-c10k
       expect: { status: firing }
@@ -37,7 +44,11 @@
     and makes tcp_tw_reuse unsafe or useless.
   verify: "sysctl net.ipv4.tcp_timestamps reads 1"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_timestamps
+      quote: >-
+        1: Enable timestamps as defined in RFC1323 and use random offset for each connection rather than only
+        using the current time.
   tests:
     - fixture: legacy-4.9-c10k
       expect: { status: firing }
@@ -60,7 +71,11 @@
     protection, so a SYN flood then fills the backlog and drops all new connections.
   verify: "sysctl net.ipv4.tcp_syncookies reads 1 (or 2 for testing only)"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_syncookies
+      quote: >-
+        Send out syncookies when the syn backlog queue of a socket overflows. This is to prevent against the
+        common ‘SYN flood attack’
   tests:
     - fixture: antipatterns-no-syncookies
       expect: { status: firing }
@@ -87,8 +102,16 @@
     tcp_wmem count against this budget.
   verify: "tcp_mem[2] x page size is below total RAM, with room left for applications and the page cache"
   sources:
-    - https://docs.kernel.org/networking/ip-sysctl.html
-    - https://github.com/redhat-performance/tuned/tree/master/profiles
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: tcp_mem
+      quote: >-
+        pressure: when amount of memory allocated by TCP exceeds this number of pages, TCP moderates its memory
+        consumption and enters memory pressure mode, which is exited when memory consumption falls under “min”.
+    - url: https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/network-throughput/tuned.conf
+      section: "[sysctl]"
+      quote: >-
+        The buffer tuning values below do not account for any potential hugepage allocation. # Ensure that you
+        do not oversubscribe system memory.
   tests:
     - fixture: antipatterns-oversized-tcpmem
       expect: { status: firing }

@@ -22,8 +22,10 @@
     cause: look at netdev_budget and IRQ spread.
   verify: "nic.<if>.rx_missed_errors rate returns to 0; `ethtool -g <if>` shows the new size"
   sources:
-    - https://man7.org/linux/man-pages/man8/ethtool.8.html
-    - https://docs.kernel.org/networking/scaling.html
+    - url: https://man7.org/linux/man-pages/man8/ethtool.8.html
+      section: "-G --set-ring"
+      quote: >-
+        rx N Changes the number of ring entries for the Rx ring.
   tests:
     - fixture: network-25g-backlog-drops
       expect: { status: recommend, proposed: "1024", target: eth0 }
@@ -59,8 +61,15 @@
     NIC's namespace. It stays silent while softnet counters are quiet.
   verify: "softnet.time_squeeze and softnet.dropped rates fall; /proc/interrupts shows the NIC IRQs spread over more CPUs"
   sources:
-    - https://docs.kernel.org/networking/scaling.html
-    - https://man7.org/linux/man-pages/man8/ethtool.8.html
+    - url: https://docs.kernel.org/networking/scaling.html
+      section: "RSS: Receive Side Scaling"
+      quote: >-
+        Contemporary NICs support multiple receive and transmit descriptor queues (multi-queue). On reception, a
+        NIC can send different packets to different queues to distribute processing among CPUs.
+    - url: https://man7.org/linux/man-pages/man8/ethtool.8.html
+      section: "-L --set-channels"
+      quote: >-
+        combined N Changes the number of multi-purpose channels.
   tests:
     - fixture: network-few-channels
       expect: { status: recommend, proposed: "8", target: eth0 }
@@ -90,7 +99,11 @@
     cache traffic and gains nothing if RSS already spreads the load; it needs a physical NIC at 1 Gbit/s or more.
   verify: "softnet_stat column received_rps rises and per-CPU softirq load evens out"
   sources:
-    - https://docs.kernel.org/networking/scaling.html
+    - url: https://docs.kernel.org/networking/scaling.html
+      section: RPS Configuration
+      quote: >-
+        For a single queue device, a typical RPS configuration would be to set the rps_cpus to the CPUs in the
+        same memory domain of the interrupting CPU.
   tests:
     - fixture: network-single-queue-nic
       expect: { status: recommend, proposed: "ffff", target: eth1 }
