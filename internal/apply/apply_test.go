@@ -251,12 +251,19 @@ func TestPathEscapeRejected(t *testing.T) {
 	root := setup(t)
 	for _, r := range []advisor.Recommendation{
 		rec("sysfs", "/sys/block/{item}/queue/scheduler", "../../../../etc", "x"),
-		rec("limit", "nofile", "../../../evil", "1"),
 		rec("sysfs", "../outside", "", "x"),
 	} {
 		if _, err := BuildPlan([]advisor.Recommendation{r}, root); err == nil || !strings.Contains(err.Error(), "escapes root") {
 			t.Errorf("%s/%s: err = %v", r.Param, r.Target, err)
 		}
+	}
+}
+
+func TestInvalidUnitNameSkipped(t *testing.T) {
+	root := setup(t)
+	p, err := BuildPlan([]advisor.Recommendation{rec("limit", "nofile", "../../../evil", "1")}, root)
+	if err != nil || len(p.Ops) != 0 || len(p.Skipped) != 1 || !strings.Contains(p.Skipped[0].Reason, "invalid systemd unit") {
+		t.Fatalf("plan = %+v err=%v", p, err)
 	}
 }
 

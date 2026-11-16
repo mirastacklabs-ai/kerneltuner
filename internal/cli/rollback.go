@@ -4,11 +4,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/apply"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 )
+
+func warnTo(w io.Writer) func(string) {
+	return func(m string) { _, _ = fmt.Fprintln(w, "warning:", m) }
+}
 
 func newRollbackCmd(g *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
@@ -21,7 +27,7 @@ func newRollbackCmd(g *globalOpts) *cobra.Command {
 			out := cmd.OutOrStdout()
 			root := g.Root()
 			if list {
-				snaps, err := apply.List(root)
+				snaps, err := apply.ListWarn(root, warnTo(cmd.ErrOrStderr()))
 				if err != nil {
 					return err
 				}
@@ -32,7 +38,11 @@ func newRollbackCmd(g *globalOpts) *cobra.Command {
 					_, _ = fmt.Fprintln(out, "no snapshots")
 				}
 				for _, s := range snaps {
-					_, _ = fmt.Fprintf(out, "%s\t%d live value(s)\t%d file(s)\t%s\n", s.ID, len(s.Live), len(s.Files), s.Version)
+					state := ""
+					if s.RolledBackAt != nil {
+						state = "\trolled back"
+					}
+					_, _ = fmt.Fprintf(out, "%s\t%d live value(s)\t%d file(s)\t%s%s\n", s.ID, len(s.Live), len(s.Files), facts.SafeText(s.Version), state)
 				}
 				return nil
 			}
@@ -46,14 +56,15 @@ func newRollbackCmd(g *globalOpts) *cobra.Command {
 				if !yes {
 					return errors.New("no snapshot ID given: pass an ID, or --yes to roll back the latest snapshot (see --list)")
 				}
-				snaps, err := apply.List(root)
+				snaps, err := apply.ListWarn(root, warnTo(cmd.ErrOrStderr()))
 				if err != nil {
 					return err
 				}
-				if len(snaps) == 0 {
-					return errors.New("no snapshots to roll back")
+				latest, ok := apply.Latest(snaps)
+				if !ok {
+					return errors.New("no snapshots to roll back (all rolled back already, or none exist)")
 				}
-				id = snaps[len(snaps)-1].ID
+				id = latest.ID
 			}
 			if err := apply.Rollback(root, id); err != nil {
 				return err

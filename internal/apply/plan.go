@@ -54,6 +54,10 @@ type Plan struct {
 	Skipped []Skip     `json:"skipped,omitempty"`
 	// Warnings lists proposals that disagreed and how they were merged.
 	Warnings []string `json:"warnings,omitempty"`
+	// Blocked lists genuine rule conflicts behind planned ops. Apply refuses
+	// to write while any exist; selecting one contributor with --rule leaves
+	// a single recommendation and so clears them.
+	Blocked []string `json:"blocked,omitempty"`
 }
 
 // BuildPlan resolves recommendations (kinds sysctl, sysfs, limit; status
@@ -62,10 +66,17 @@ type Plan struct {
 // Go does not allow a function and a type of the same name.)
 func BuildPlan(recs []advisor.Recommendation, root facts.Root) (*Plan, error) {
 	p := &Plan{Root: root}
+	genuine := map[string]string{}
+	for _, c := range advisor.Conflicts(recs) {
+		if c.Genuine() {
+			genuine[strings.ToLower(c.Kind+"|"+c.Param+"|"+c.Target)] = c.String()
+		}
+	}
 	recs, conflicts := advisor.Reconcile(recs)
 	for _, c := range conflicts {
 		p.Warnings = append(p.Warnings, c.String())
 	}
+	scores := map[string]float64{} // op key -> score of the rec that produced it
 	for _, r := range recs {
 		if r.Status != advisor.StatusRecommend && r.Status != advisor.StatusFiring {
 			continue
@@ -101,13 +112,71 @@ func BuildPlan(recs []advisor.Recommendation, root facts.Root) (*Plan, error) {
 			continue
 		}
 		for _, op := range ops {
+			if err := checkOp(root, op); err != nil {
+				p.Skipped = append(p.Skipped, Skip{RuleID: r.RuleID, Reason: "refused: " + err.Error()})
+				continue
+			}
 			if len(r.Contributors) > 1 {
 				op.Rules = r.Contributors
 			}
-			p.Ops = append(p.Ops, op)
+			if msg, ok := genuine[strings.ToLower(r.Kind+"|"+r.Param+"|"+r.Target)]; ok {
+				p.addBlocked(msg)
+			}
+			p.add(op, r.Score, scores)
 		}
 	}
 	return p, nil
+}
+
+func opKey(op Op) string {
+	if op.LivePath != "" {
+		return op.LivePath
+	}
+	return op.File + "|" + op.FileKey
+}
+
+// add appends op, reconciling it with an earlier op that writes the same
+// file or kernel value under another spelling: equal values merge, differing
+// values keep the higher-scored one and block the apply as a conflict.
+func (p *Plan) add(op Op, score float64, scores map[string]float64) {
+	k := opKey(op)
+	for i := range p.Ops {
+		if opKey(p.Ops[i]) != k {
+			continue
+		}
+		old := &p.Ops[i]
+		if norm(old.Proposed) != norm(op.Proposed) {
+			msg := fmt.Sprintf("%s: %s proposes %q, %s proposes %q", filepath.Base(k), old.RuleID, old.Proposed, op.RuleID, op.Proposed)
+			p.Warnings = append(p.Warnings, msg)
+			p.addBlocked(msg)
+			if score > scores[k] {
+				*old = op
+				scores[k] = score
+			}
+		}
+		old.Rules = appendUniq(appendUniq(old.Rules, old.RuleID), op.RuleID)
+		return
+	}
+	scores[k] = score
+	p.Ops = append(p.Ops, op)
+}
+
+func (p *Plan) addBlocked(msg string) {
+	for _, b := range p.Blocked {
+		if b == msg {
+			return
+		}
+	}
+	p.Blocked = append(p.Blocked, msg)
+}
+
+func appendUniq(l []string, s string) []string {
+	for _, x := range l {
+		if x == s {
+			return l
+		}
+	}
+	return append(l, s)
 }
 
 func planSysctl(r advisor.Recommendation, root facts.Root) (*Op, string, error) {
@@ -185,6 +254,9 @@ func planLimit(r advisor.Recommendation, root facts.Root) (*Op, string, error) {
 	}
 	if r.Proposed == "" {
 		return nil, "missing proposed value", nil
+	}
+	if !facts.ValidUnitName(unit) {
+		return nil, fmt.Sprintf("refused: invalid systemd unit name %q", facts.SafeText(unit)), nil
 	}
 	file, err := within(root.Etc, filepath.Join(root.Etc, "systemd", "system", unit+".d", dropinFile))
 	if err != nil {

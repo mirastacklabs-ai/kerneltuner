@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
@@ -25,12 +26,13 @@ type ValueIO interface {
 type osIO struct{}
 
 func (osIO) Read(p string) (string, error) {
-	b, err := os.ReadFile(p)
+	b, err := facts.ReadBounded(p, 1<<20)
 	return string(b), err
 }
 
 func (osIO) Write(p, v string) error {
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_TRUNC, 0) // never create live files
+	// Never create live files, never follow a symlink at the final component.
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return err
 	}
@@ -74,6 +76,9 @@ type Snapshot struct {
 	Live        []LiveValue `json:"live"`
 	Files       []FileState `json:"files"`
 	CreatedDirs []string    `json:"created_dirs,omitempty"`
+	// RolledBackAt is set once the snapshot has been restored; rollback with
+	// no ID skips such snapshots.
+	RolledBackAt *time.Time `json:"rolled_back_at,omitempty"`
 }
 
 // Result describes an Apply run.
@@ -91,6 +96,11 @@ func snapDir(root facts.Root) string {
 	return filepath.Join(root.Var, "lib", "kerneltuner", "snapshots")
 }
 
+// shellQuote single-quotes s for a POSIX shell.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // Apply executes plan: snapshot, managed files, live values, verify. Any
 // failure triggers an automatic rollback of this snapshot.
 func Apply(plan *Plan, opts Options) (*Result, error) {
@@ -100,18 +110,26 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 	if opts.IO == nil {
 		opts.IO = OSIO
 	}
+	root := plan.Root
+	for _, op := range plan.Ops {
+		if err := checkOp(root, op); err != nil {
+			return nil, fmt.Errorf("refusing op %s (rule %s): %w", facts.SafeText(op.Param), facts.SafeText(op.RuleID), err)
+		}
+	}
+	if len(plan.Blocked) > 0 && !opts.DryRun {
+		return nil, fmt.Errorf("refusing to apply conflicting rules (select one with --rule): %s", strings.Join(plan.Blocked, "; "))
+	}
 	res := &Result{DryRun: opts.DryRun, Ops: plan.Ops}
 	units := map[string]bool{}
 	for _, op := range plan.Ops {
 		if op.Unit != "" && !units[op.Unit] {
 			units[op.Unit] = true
-			res.Hints = append(res.Hints, fmt.Sprintf("limits take effect after: systemctl daemon-reload && systemctl restart %s", op.Unit))
+			res.Hints = append(res.Hints, "limits take effect after: systemctl daemon-reload && systemctl restart "+shellQuote(op.Unit))
 		}
 	}
 	if opts.DryRun || len(plan.Ops) == 0 {
 		return res, nil
 	}
-	root := plan.Root
 
 	// Group file edits (deterministic order).
 	edits := map[string][]Op{}
@@ -129,11 +147,17 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 	// Read prior state; nothing is written yet.
 	now := opts.Now().UTC()
 	snap := &Snapshot{Created: now, Version: opts.Version}
+	live := map[string]string{} // op.LivePath -> resolved path
 	for _, op := range plan.Ops {
 		if op.LivePath == "" {
 			continue
 		}
-		prior, err := opts.IO.Read(op.LivePath)
+		rp, err := resolveLive(root, op.LivePath)
+		if err != nil {
+			return nil, fmt.Errorf("live path %s: %w", op.LivePath, err)
+		}
+		live[op.LivePath] = rp
+		prior, err := opts.IO.Read(rp)
 		if err != nil {
 			return nil, fmt.Errorf("read live value %s: %w", op.LivePath, err)
 		}
@@ -142,7 +166,7 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 	newContent := map[string][]byte{}
 	for _, p := range paths {
 		fsState := FileState{Path: p}
-		prior, err := os.ReadFile(p)
+		prior, meta, err := readFileBeneath(root.Etc, p)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			fsState.DidNotExist = true
@@ -151,10 +175,7 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 			return nil, fmt.Errorf("read %s: %w", p, err)
 		default:
 			fsState.Content = prior
-			fsState.Mode = 0o644
-			if st, serr := os.Stat(p); serr == nil {
-				fsState.Mode = uint32(st.Mode().Perm())
-			}
+			fsState.Mode = meta.Mode & 0o644
 		}
 		newContent[p] = merge(edits[p][0].FileKind, string(prior), fsState.DidNotExist, edits[p])
 		snap.Files = append(snap.Files, fsState)
@@ -163,14 +184,19 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 
 	// 1. Snapshot first.
 	dir := snapDir(root)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("create snapshot dir: %w", err)
+	for _, d := range []string{filepath.Dir(dir), dir} {
+		if err := ensurePrivateDir(root.Var, d); err != nil {
+			return nil, fmt.Errorf("snapshot dir: %w", err)
+		}
+	}
+	taken := map[string]bool{}
+	if ents, err := listDirBeneath(root.Var, dir); err == nil {
+		for _, e := range ents {
+			taken[e.Name()] = true
+		}
 	}
 	id := now.Format("20060102T150405Z")
-	for n := 2; ; n++ {
-		if _, err := os.Stat(filepath.Join(dir, id+".json")); errors.Is(err, fs.ErrNotExist) {
-			break
-		}
+	for n := 2; taken[id+".json"]; n++ {
 		id = fmt.Sprintf("%s-%d", now.Format("20060102T150405Z"), n)
 	}
 	snap.ID = id
@@ -179,31 +205,31 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 		return nil, err
 	}
 	snapPath := filepath.Join(dir, id+".json")
-	if err := writeAtomic(snapPath, data, 0o600); err != nil {
+	if err := writeFileBeneath(root.Var, snapPath, data, 0o600, nil); err != nil {
 		return nil, fmt.Errorf("write snapshot: %w", err)
 	}
 	res.ID, res.Snapshot = id, snapPath
 
 	fail := func(what string, cause error) (*Result, error) {
 		msg := fmt.Sprintf("apply failed: %s: %v", what, cause)
-		if rerr := rollbackSnapshot(snap, opts.IO); rerr != nil {
+		if rerr := rollbackSnapshot(root, snap, opts.IO); rerr != nil {
 			return res, fmt.Errorf("%s; AUTOMATIC ROLLBACK FAILED (%w); run: kerneltuner rollback %s", msg, rerr, id)
+		}
+		if merr := markRolledBack(root, snap); merr != nil {
+			return res, fmt.Errorf("%s; rolled back snapshot %s (could not mark it: %w)", msg, id, merr)
 		}
 		return res, fmt.Errorf("%s; rolled back snapshot %s", msg, id)
 	}
 
 	// 2. Managed files.
 	for _, p := range paths {
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return fail("create dir for "+p, err)
-		}
 		mode := os.FileMode(0o644)
 		for _, f := range snap.Files {
 			if f.Path == p && !f.DidNotExist {
 				mode = os.FileMode(f.Mode)
 			}
 		}
-		if err := writeAtomic(p, newContent[p], mode); err != nil {
+		if err := writeFileBeneath(root.Etc, p, newContent[p], mode, nil); err != nil {
 			return fail("write "+p, err)
 		}
 	}
@@ -212,13 +238,13 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 		if op.LivePath == "" {
 			continue
 		}
-		if err := opts.IO.Write(op.LivePath, op.Proposed+"\n"); err != nil {
+		if err := opts.IO.Write(live[op.LivePath], op.Proposed+"\n"); err != nil {
 			return fail("write live value "+op.LivePath, err)
 		}
 	}
 	// 4. Verify.
 	for _, p := range paths {
-		got, err := os.ReadFile(p)
+		got, _, err := readFileBeneath(root.Etc, p)
 		if err != nil || string(got) != string(newContent[p]) {
 			return fail("verify "+p, errors.New("file content differs from what was written"))
 		}
@@ -227,7 +253,7 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 		if op.LivePath == "" {
 			continue
 		}
-		got, err := opts.IO.Read(op.LivePath)
+		got, err := opts.IO.Read(live[op.LivePath])
 		if err != nil {
 			return fail("verify "+op.LivePath, err)
 		}
@@ -249,38 +275,75 @@ func RollbackWith(root facts.Root, id string, io ValueIO) error {
 	if err != nil {
 		return err
 	}
-	return rollbackSnapshot(snap, io)
+	if err := rollbackSnapshot(root, snap, io); err != nil {
+		return err
+	}
+	if err := markRolledBack(root, snap); err != nil {
+		return fmt.Errorf("snapshot %s restored but could not be marked rolled back: %w", id, err)
+	}
+	return nil
 }
 
-func rollbackSnapshot(s *Snapshot, io ValueIO) error {
+// markRolledBack records the rollback time in the snapshot file.
+func markRolledBack(root facts.Root, s *Snapshot) error {
+	t := time.Now().UTC()
+	s.RolledBackAt = &t
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileBeneath(root.Var, filepath.Join(snapDir(root), s.ID+".json"), data, 0o600, nil)
+}
+
+func rollbackSnapshot(root facts.Root, s *Snapshot, io ValueIO) error {
 	var errs []error
 	for _, lv := range s.Live {
-		if err := io.Write(lv.Path, restoreValue(lv.Prior)); err != nil {
+		rp, err := resolveLive(root, lv.Path)
+		if err == nil {
+			err = io.Write(rp, restoreValue(lv.Prior))
+		}
+		if err != nil {
 			errs = append(errs, fmt.Errorf("restore %s: %w", lv.Path, err))
 		}
 	}
 	for _, f := range s.Files {
 		if f.DidNotExist {
-			if err := os.Remove(f.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			if err := removeBeneath(root.Etc, f.Path, false); err != nil {
 				errs = append(errs, fmt.Errorf("remove %s: %w", f.Path, err))
 			}
 			continue
 		}
-		if err := writeAtomic(f.Path, f.Content, os.FileMode(f.Mode)); err != nil {
+		if err := writeFileBeneath(root.Etc, f.Path, f.Content, os.FileMode(f.Mode), nil); err != nil {
 			errs = append(errs, fmt.Errorf("restore %s: %w", f.Path, err))
 		}
 	}
 	dirs := append([]string(nil), s.CreatedDirs...)
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
 	for _, d := range dirs {
-		_ = os.Remove(d) // only succeeds when empty
+		base := root.Etc
+		if !under(root.Etc, d) {
+			base = root.Var
+		}
+		if filepath.Clean(d) == filepath.Clean(base) {
+			if st, err := os.Lstat(d); err == nil && st.Mode()&os.ModeSymlink == 0 {
+				_ = os.Remove(d) // only succeeds when empty
+			}
+			continue
+		}
+		_ = removeBeneath(base, d, true) // only succeeds when empty; never through a symlink
 	}
 	return errors.Join(errs...)
 }
 
-// List returns the snapshots under root, oldest first.
+// List returns the snapshots under root, oldest first. Corrupt or invalid
+// files are skipped with a warning on stderr.
 func List(root facts.Root) ([]Snapshot, error) {
-	ents, err := os.ReadDir(snapDir(root))
+	return ListWarn(root, func(m string) { fmt.Fprintln(os.Stderr, "warning:", m) })
+}
+
+// ListWarn is List with a warning callback.
+func ListWarn(root facts.Root, warn func(string)) ([]Snapshot, error) {
+	ents, err := listDirBeneath(root.Var, snapDir(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -295,7 +358,8 @@ func List(root facts.Root) ([]Snapshot, error) {
 		}
 		s, err := load(root, strings.TrimSuffix(name, ".json"))
 		if err != nil {
-			return nil, err
+			warn(fmt.Sprintf("skipping snapshot %s: %v", facts.SafeText(name), err))
+			continue
 		}
 		out = append(out, *s)
 	}
@@ -308,54 +372,60 @@ func List(root facts.Root) ([]Snapshot, error) {
 	return out, nil
 }
 
+// Latest returns the newest snapshot that has not been rolled back.
+func Latest(snaps []Snapshot) (Snapshot, bool) {
+	for i := len(snaps) - 1; i >= 0; i-- {
+		if snaps[i].RolledBackAt == nil {
+			return snaps[i], true
+		}
+	}
+	return Snapshot{}, false
+}
+
 func load(root facts.Root, id string) (*Snapshot, error) {
 	if !idRe.MatchString(id) {
 		return nil, fmt.Errorf("invalid snapshot id %q", id)
 	}
-	b, err := os.ReadFile(filepath.Join(snapDir(root), id+".json"))
+	dir := snapDir(root)
+	if euid() == 0 {
+		// As root we act on this file: it and its directories must be ours.
+		for _, d := range []string{filepath.Dir(dir), dir} {
+			m, err := statDirBeneath(root.Var, d)
+			if err != nil {
+				return nil, fmt.Errorf("snapshot %s: %w", id, err)
+			}
+			if err := trusted(d, m); err != nil {
+				return nil, fmt.Errorf("snapshot %s: %w", id, err)
+			}
+		}
+	}
+	b, meta, err := readFileBeneath(root.Var, filepath.Join(dir, id+".json"))
 	if err != nil {
 		return nil, fmt.Errorf("snapshot %s: %w", id, err)
+	}
+	if euid() == 0 {
+		if err := trusted(id+".json", meta); err != nil {
+			return nil, fmt.Errorf("snapshot %s: %w", id, err)
+		}
 	}
 	var s Snapshot
 	if err := json.Unmarshal(b, &s); err != nil {
 		return nil, fmt.Errorf("snapshot %s: %w", id, err)
 	}
+	s.ID = id
+	if err := validateSnapshot(root, &s); err != nil {
+		return nil, fmt.Errorf("snapshot %s: %w", id, err)
+	}
 	return &s, nil
 }
 
-// writeAtomic writes via a temp file in the same directory plus rename.
-func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+// trusted requires root ownership and no group/world write access.
+func trusted(what string, m fileMeta) error {
+	if m.UID != 0 {
+		return fmt.Errorf("%s is owned by uid %d, not root: refusing to trust it", what, m.UID)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".kerneltuner-*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	cleanup := func() { _ = os.Remove(name) }
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := os.Rename(name, path); err != nil {
-		cleanup()
-		return err
+	if m.Mode&0o022 != 0 {
+		return fmt.Errorf("%s is group- or world-writable (mode %04o): refusing to trust it", what, m.Mode)
 	}
 	return nil
 }
@@ -364,7 +434,7 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 func missingDirs(dir string) []string {
 	var out []string
 	for dir != "" && dir != filepath.Dir(dir) {
-		if _, err := os.Stat(dir); err == nil {
+		if _, err := os.Lstat(dir); err == nil {
 			break
 		}
 		out = append(out, dir)
@@ -383,101 +453,4 @@ func dedupe(in []string) []string {
 		}
 	}
 	return out
-}
-
-func norm(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-// valueMatches compares with whitespace normalisation. Selector-style files
-// such as "[none] mq-deadline" match when the bracketed token equals want.
-func valueMatches(got, want string) bool {
-	if norm(got) == norm(want) {
-		return true
-	}
-	return bracketed(got) != "" && bracketed(got) == norm(want)
-}
-
-func bracketed(s string) string {
-	i := strings.IndexByte(s, '[')
-	j := strings.IndexByte(s, ']')
-	if i < 0 || j < i {
-		return ""
-	}
-	return s[i+1 : j]
-}
-
-// restoreValue returns what to write back for a recorded raw value: the raw
-// content, except for selector files where only the active token is writable.
-func restoreValue(raw string) string {
-	if b := bracketed(raw); b != "" {
-		return b + "\n"
-	}
-	return raw
-}
-
-// merge produces the new content of a managed file, replacing lines for the
-// keys being set and preserving everything else.
-func merge(kind, existing string, isNew bool, ops []Op) []byte {
-	sep, header := " = ", "# Managed by kerneltuner. Remove with: kerneltuner rollback <id>\n"
-	if kind == fileDropin {
-		sep, header = "=", "# Managed by kerneltuner.\n"
-	}
-	want := map[string]string{}
-	var order []string
-	for _, op := range ops {
-		if _, ok := want[op.FileKey]; !ok {
-			order = append(order, op.FileKey)
-		}
-		want[op.FileKey] = op.Proposed
-	}
-	var lines []string
-	if existing != "" {
-		lines = strings.Split(strings.TrimSuffix(existing, "\n"), "\n")
-	}
-	done := map[string]bool{}
-	var out []string
-	for _, ln := range lines {
-		t := strings.TrimSpace(ln)
-		if t == "" || t[0] == '#' || t[0] == ';' {
-			out = append(out, ln)
-			continue
-		}
-		k, _, ok := strings.Cut(t, "=")
-		k = strings.TrimSpace(k)
-		if ok {
-			if v, hit := want[k]; hit {
-				if !done[k] { // drop duplicates of a managed key
-					out = append(out, k+sep+v)
-					done[k] = true
-				}
-				continue
-			}
-		}
-		out = append(out, ln)
-	}
-	var add []string
-	for _, k := range order {
-		if !done[k] {
-			add = append(add, k+sep+want[k])
-		}
-	}
-	if kind == fileDropin && len(add) > 0 {
-		idx := -1
-		for i, ln := range out {
-			if strings.TrimSpace(ln) == "[Service]" {
-				idx = i
-			}
-		}
-		if idx < 0 {
-			out = append(out, "[Service]")
-			out = append(out, add...)
-		} else {
-			out = append(out[:idx+1], append(add, out[idx+1:]...)...)
-		}
-	} else {
-		out = append(out, add...)
-	}
-	if isNew || existing == "" {
-		out = append([]string{strings.TrimSuffix(header, "\n")}, out...)
-	}
-	return []byte(strings.Join(out, "\n") + "\n")
 }
