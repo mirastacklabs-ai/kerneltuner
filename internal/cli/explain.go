@@ -162,7 +162,7 @@ func explainText(w io.Writer, rs []rules.Rule, recs []advisor.Recommendation, c 
 			b.WriteString("  (no result)\n")
 		}
 	}
-	_, err := io.WriteString(w, b.String())
+	_, err := io.WriteString(w, render.CleanText(b.String()))
 	return err
 }
 

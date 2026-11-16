@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -18,8 +17,9 @@ func collectKconfig(r Root, f *Facts) {
 	var data []byte
 	if b, err := readGzip(filepath.Join(r.Proc, "config.gz")); err == nil {
 		data = b
-	} else if f.Kernel.Release != "" {
-		data, _ = os.ReadFile(filepath.Join(filepath.Dir(r.Proc), "boot", "config-"+f.Kernel.Release))
+	} else if rel := f.Kernel.Release; rel != "" && !strings.ContainsAny(rel, `/\`) && !strings.Contains(rel, "..") {
+		// A release with a path separator or ".." must not pick another file.
+		data, _ = ReadBounded(filepath.Join(filepath.Dir(r.Proc), "boot", "config-"+rel), maxKconfig)
 	}
 	if len(data) > 0 {
 		f.Kernel.Config = ParseKconfig(string(data))
@@ -27,7 +27,7 @@ func collectKconfig(r Root, f *Facts) {
 }
 
 func readGzip(path string) ([]byte, error) {
-	b, err := os.ReadFile(path)
+	b, err := ReadBounded(path, maxKconfig)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/agent"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 )
 
 const statusEvents = 10
@@ -43,6 +44,21 @@ func newStatusCmd(g *globalOpts) *cobra.Command {
 }
 
 func printStatus(w io.Writer, sf *agent.StateFile, now time.Time) {
+	clean := *sf
+	clean.Host, clean.Interval = facts.SafeText(sf.Host), facts.SafeText(sf.Interval)
+	clean.Rules = make([]agent.RuleState, len(sf.Rules))
+	for i, r := range sf.Rules {
+		for _, p := range []*string{&r.ID, &r.Target, &r.State, &r.LastEvidence, &r.Current, &r.Proposed} {
+			*p = facts.SafeText(*p)
+		}
+		clean.Rules[i] = r
+	}
+	clean.RecentEvents = make([]agent.Event, len(sf.RecentEvents))
+	for i, e := range sf.RecentEvents {
+		e.State, e.Message = facts.SafeText(e.State), facts.SafeText(e.Message)
+		clean.RecentEvents[i] = e
+	}
+	sf = &clean
 	pf(w, "host %s, interval %s, updated %s ago\n", sf.Host, sf.Interval, round(now.Sub(sf.Updated)))
 	firing := 0
 	for _, r := range sf.Rules {
