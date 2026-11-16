@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+project_name: kerneltuner
+
+builds:
+  - id: kerneltuner
+    main: ./cmd/kerneltuner
+    binary: kerneltuner
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X github.com/mirastacklabs-ai/kerneltuner/internal/cli.Version={{ .Version }}
+      - -X github.com/mirastacklabs-ai/kerneltuner/internal/cli.GitCommit={{ .ShortCommit }}
+      - -X github.com/mirastacklabs-ai/kerneltuner/internal/cli.BuildDate={{ .Date }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE*
+      - README.md
+      - src: deploy/kerneltuner.service
+        strip_parent: true
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - id: archive-sboms
+    artifacts: archive
+    cmd: syft
+    args: ["$artifact", "--output", "spdx-json=$document"]
+    documents:
+      - "${artifact}.sbom.json"
+
+nfpms:
+  - id: packages
+    package_name: kerneltuner
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    vendor: MiraStack Labs
+    maintainer: MiraStack Labs
+    homepage: https://github.com/mirastacklabs-ai/kerneltuner
+    license: Apache-2.0
+    description: Linux kernel tuning advisor and observe-only agent.
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: deploy/kerneltuner.service
+        dst: /usr/lib/systemd/system/kerneltuner.service
+        file_info:
+          mode: 0644
+    scripts:
+      postinstall: scripts/postinstall.sh
+      postremove: scripts/postremove.sh
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge "
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Documentation
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: mirastacklabs-ai
+    name: kerneltuner
+  prerelease: auto
