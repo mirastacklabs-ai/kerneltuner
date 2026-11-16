@@ -3,18 +3,61 @@ package render
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-
-	"regexp"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 )
 
 // ifNameRe is what a network interface name may look like (IFNAMSIZ-1).
-var ifNameRe = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,15}$`)
+var ifNameRe = regexp.MustCompile(`^[A-Za-z0-9_.@][A-Za-z0-9_.@-]{0,14}$`)
+
+// cmdTokenRe is what one kernel command line token may contain. It excludes
+// quotes, "$", backtick, backslash, ";" and whitespace, so a token can never
+// break out of GRUB_CMDLINE_LINUX="..." or the grubby example.
+var cmdTokenRe = regexp.MustCompile(`^[A-Za-z0-9_.,:=+/-]+$`)
+
+// limitItems is the fixed set of limits.d items kerneltuner emits.
+var limitItems = map[string]bool{"nofile": true, "memlock": true, "nproc": true}
+
+// cleanValue mirrors apply's checkValue and adds "no whitespace": non-empty,
+// printable, and free of the U+FFFD that SafeText leaves where it replaced a
+// control character. It is for values written into generated config files.
+func cleanValue(v string) bool {
+	if v == "" {
+		return false
+	}
+	for _, r := range v {
+		if !unicode.IsPrint(r) || r == utf8.RuneError || unicode.IsSpace(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// cleanText is cleanValue for free-form names that may contain spaces.
+func cleanText(v string) bool {
+	if v == "" || strings.TrimSpace(v) == "" {
+		return false
+	}
+	for _, r := range v {
+		if !unicode.IsPrint(r) || r == utf8.RuneError {
+			return false
+		}
+	}
+	return facts.SafeText(v) == v
+}
+
+// skipNote is the comment that replaces an entry that was not emitted. It
+// never echoes the offending text.
+func skipNote(r advisor.Recommendation, why string) string {
+	return fmt.Sprintf("# skipped %s: %s\n", facts.SafeText(r.RuleID), why)
+}
 
 var shellSafeRe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
 
@@ -209,6 +252,10 @@ func Limits(recs []advisor.Recommendation, m Meta) (dropins map[string]string, l
 		fmt.Fprintf(&fb, "\n# %s (%s): %s\n", facts.SafeText(ids), facts.SafeText(r.Target), facts.SafeText(r.Title))
 		fb.WriteString(sourceComments(r, m, "# "))
 		item, val := limitsConfLine(r)
+		if !limitItems[item] || !cleanValue(val) {
+			fb.WriteString("# skipped: value is not safe to write to limits.d\n")
+			continue
+		}
 		fmt.Fprintf(&fb, "*\tsoft\t%s\t%s\n*\thard\t%s\t%s\n", item, val, item, val)
 	}
 	for u, b := range units {
@@ -245,16 +292,26 @@ func Tuned(recs []advisor.Recommendation, m Meta) string {
 		return ""
 	}
 	include := "throughput-performance"
+	skipInclude := ""
 	if m.Facts != nil && m.Facts.Tuned.Active && m.Facts.Tuned.Profile != "" {
-		include = m.Facts.Tuned.Profile
+		if p := m.Facts.Tuned.Profile; cleanText(p) {
+			include = p
+		} else {
+			skipInclude = "# the active tuned profile name is not safe to write; using the default include\n"
+		}
 	}
 	var b strings.Builder
 	b.WriteString(m.header("# "))
 	b.WriteString("# Install as /etc/tuned/kerneltuner/tuned.conf, then: tuned-adm profile kerneltuner\n")
+	b.WriteString(skipInclude)
 	fmt.Fprintf(&b, "\n[main]\ninclude=%s\n", include)
 	if len(sysctls) > 0 {
 		b.WriteString("\n[sysctl]\n")
 		for _, r := range sysctls {
+			if !cleanText(r.Param) || !cleanText(r.Proposed) {
+				b.WriteString(skipNote(r, "name or value is not safe to write"))
+				continue
+			}
 			b.WriteString(comment(r, m))
 			fmt.Fprintf(&b, "%s=%s\n", r.Param, r.Proposed)
 		}
@@ -262,29 +319,55 @@ func Tuned(recs []advisor.Recommendation, m Meta) string {
 	if len(sysfs) > 0 {
 		b.WriteString("\n[sysfs]\n")
 		for _, r := range sysfs {
+			if !cleanText(r.Param) || !cleanText(r.Proposed) {
+				b.WriteString(skipNote(r, "name or value is not safe to write"))
+				continue
+			}
 			b.WriteString(comment(r, m))
 			for _, t := range targets(r) {
+				if !cleanText(t) {
+					b.WriteString(skipNote(r, "target is not safe to write"))
+					continue
+				}
 				fmt.Fprintf(&b, "%s=%s\n", strings.ReplaceAll(r.Param, "{item}", t), r.Proposed)
 			}
 		}
 	}
 	if len(cmd) > 0 {
+		args, skipped := cmdArgs(cmd)
 		b.WriteString("\n[bootloader]\n# REBOOT REQUIRED\n")
-		fmt.Fprintf(&b, "cmdline=+%s\n", strings.Join(cmdArgs(cmd), " "))
+		for _, s := range skipped {
+			b.WriteString(s)
+		}
+		if len(args) > 0 {
+			fmt.Fprintf(&b, "cmdline=+%s\n", strings.Join(args, " "))
+		}
 	}
 	return b.String()
 }
 
-func cmdArgs(rs []advisor.Recommendation) []string {
-	var args []string
-	for _, r := range rs {
-		if r.Proposed == "" {
-			args = append(args, r.Param)
-		} else {
-			args = append(args, r.Param+"="+r.Proposed)
-		}
+func cmdToken(r advisor.Recommendation) string {
+	if r.Proposed == "" {
+		return r.Param
 	}
-	return args
+	return r.Param + "=" + r.Proposed
+}
+
+// cmdArgs returns the kernel command line tokens of rs that pass cmdTokenRe,
+// and one comment line for each recommendation that was skipped.
+func cmdArgs(rs []advisor.Recommendation) (args, skipped []string) {
+	for _, r := range rs {
+		tok := r.Param
+		if r.Proposed != "" {
+			tok = r.Param + "=" + r.Proposed
+		}
+		if !cmdTokenRe.MatchString(tok) {
+			skipped = append(skipped, skipNote(r, "kernel parameter has characters outside [A-Za-z0-9_.,:=+/-]"))
+			continue
+		}
+		args = append(args, tok)
+	}
+	return args, skipped
 }
 
 // Cmdline renders a GRUB_CMDLINE_LINUX addition. Empty when nothing applies.
@@ -293,12 +376,21 @@ func Cmdline(recs []advisor.Recommendation, m Meta) string {
 	if len(rs) == 0 {
 		return ""
 	}
-	args := strings.Join(cmdArgs(rs), " ")
+	toks, skipped := cmdArgs(rs)
+	args := strings.Join(toks, " ")
 	var b strings.Builder
 	b.WriteString(m.header("# "))
 	b.WriteString("#\n# !!! REBOOT REQUIRED: this changes the kernel command line !!!\n#\n\n")
+	for _, s := range skipped {
+		b.WriteString(s)
+	}
+	if len(toks) == 0 {
+		return b.String()
+	}
 	for _, r := range rs {
-		b.WriteString(comment(r, m))
+		if t := cmdToken(r); cmdTokenRe.MatchString(t) {
+			b.WriteString(comment(r, m))
+		}
 	}
 	fmt.Fprintf(&b, "\n# Add to /etc/default/grub:\nGRUB_CMDLINE_LINUX=\"$GRUB_CMDLINE_LINUX %s\"\n", args)
 	b.WriteString("\n# Then regenerate the boot config and reboot:\n")
