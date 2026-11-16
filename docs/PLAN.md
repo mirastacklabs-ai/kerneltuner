@@ -121,7 +121,7 @@ Score = base priority × risk penalty × evidence boost. Rules whose proposed va
 - `rollback <snapshot>`: restores values and removes or rewrites the managed file.
 - `capture`: tars the relevant /proc and /sys files for fixtures and bug reports. Secrets and cmdline arguments are stripped.
 
-The systemd unit for `agent` is hardened: `ProtectSystem=strict` and `NoNewPrivileges`. It gets only `CAP_DAC_READ_SEARCH` + `CAP_SYS_PTRACE` (needed to read other processes' fd counts and limits) and `CAP_NET_ADMIN` only if ethtool needs it.
+The systemd unit for `agent` is hardened: `ProtectSystem=strict` and `NoNewPrivileges`. It gets only `CAP_DAC_READ_SEARCH` + `CAP_SYS_PTRACE` (needed to read other processes' fd counts and limits). `CAP_NET_ADMIN` turned out to be unnecessary (ethtool get-queries are unprivileged) and is not granted.
 
 ## Phases
 1. **Skeleton**: `git init`, go.mod, Makefile with Docker targets (`make test`, `make build`, `make lint` using `golang` / `golangci-lint` images; nothing installed on the host), project CLAUDE.md, README.

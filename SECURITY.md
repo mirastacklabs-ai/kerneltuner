@@ -31,15 +31,14 @@ Vulnerabilities in scope include: `apply` writing outside the paths it documents
 - `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`, `ProtectControlGroups=yes`
 - `NoNewPrivileges=yes`, `RestrictSUIDSGID=yes`, `LockPersonality=yes`, `MemoryDenyWriteExecute=yes`
 
-It runs with three capabilities and no others (`CapabilityBoundingSet` and `AmbientCapabilities` are the same list):
+It runs as a transient unprivileged user (`DynamicUser=yes`) with two capabilities and no others (`CapabilityBoundingSet` and `AmbientCapabilities` are the same list):
 
 | Capability | Why |
 |---|---|
 | `CAP_DAC_READ_SEARCH` | Read files owned by other users under `/proc/<pid>` (socket-to-process mapping, per-process limits) |
 | `CAP_SYS_PTRACE` | The kernel requires it to read `/proc/<pid>/fd` links and `/proc/<pid>/limits` of other users' processes |
-| `CAP_NET_ADMIN` | Read NIC ring and channel sizes through the ethtool ioctl |
 
-All three are used for reading. Without them the agent works with less complete process and NIC facts; missing data is never an error. The agent does not apply changes, and it has no network listener.
+Both are used for reading. `CAP_NET_ADMIN` is not needed: the ethtool ring and channel queries are unprivileged. Without them the agent works with less complete process and NIC facts; missing data is never an error. The agent does not apply changes, and it has no network listener.
 
 ### `capture` redaction
 
