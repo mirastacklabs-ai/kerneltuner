@@ -97,7 +97,7 @@ func TestValidateReportsAllProblems(t *testing.T) {
 		{"bad expr", mut(func(r *Rule) { r.Recommend = "1 +" }), "recommend does not compile"},
 		{"unknown fn", mut(func(r *Rule) { r.Applies.When = "nope()" }), "applies.when"},
 		{"bad kernel", mut(func(r *Rule) { r.Applies.Kernel = "5" }), "applies.kernel"},
-		{"unregistered source", mut(func(r *Rule) { r.Sources = []string{"https://nope"} }), "not registered"},
+		{"unregistered source", mut(func(r *Rule) { r.Sources = []SourceRef{{URL: "https://nope"}} }), "not registered"},
 		{"no source", mut(func(r *Rule) { r.Sources = nil }), "source"},
 		{"no tests", mut(func(r *Rule) { r.Tests = nil }), "golden test"},
 		{"missing fixture", mut(func(r *Rule) { r.Tests[0].Fixture = "nope" }), "nope"},

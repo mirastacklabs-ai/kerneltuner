@@ -54,7 +54,7 @@ func base(r *rules.Rule) Recommendation {
 	return Recommendation{
 		RuleID: r.ID, Kind: r.Kind, Domain: r.Domain, Param: r.Param, Title: r.Title,
 		Risk: r.Risk, Reboot: r.Reboot, Rationale: r.Rationale, Verify: r.Verify,
-		Sources: r.Sources, Status: StatusNotApplicable, Compare: r.Compare,
+		Sources: r.SourceURLs(), Status: StatusNotApplicable, Compare: r.Compare,
 	}
 }
 

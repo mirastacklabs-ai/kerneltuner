@@ -49,6 +49,9 @@ func Load(fsys fs.FS) ([]Rule, Ecosystem, []Source, error) {
 				if err := decodeStrict(b, &s); err != nil {
 					return fmt.Errorf("%s: %w", p, err)
 				}
+				for i := range s {
+					s[i].Pack = path.Dir(p)
+				}
 				srcs = append(srcs, s...)
 				return nil
 			}

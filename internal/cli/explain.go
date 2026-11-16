@@ -39,10 +39,11 @@ func newExplainCmd(g *globalOpts) *cobra.Command {
 			recs := advisor.Evaluate(matched, advisor.Input{
 				Facts: p.Facts, Workload: p.Workload, Values: values, Rates: rates, Root: p.Root, Ecosystem: p.Eco,
 			})
+			cites := render.NewCitations(matched, p.Sources)
 			if g.JSON {
-				return explainJSON(cmd.OutOrStdout(), matched, recs)
+				return explainJSON(cmd.OutOrStdout(), matched, recs, cites)
 			}
-			return explainText(cmd.OutOrStdout(), matched, recs)
+			return explainText(cmd.OutOrStdout(), matched, recs, cites)
 		},
 	}
 	return cmd
@@ -54,54 +55,57 @@ type explainDoc struct {
 }
 
 type explainEntry struct {
-	ID         string   `json:"id"`
-	Title      string   `json:"title"`
-	Kind       string   `json:"kind"`
-	Param      string   `json:"param"`
-	Domain     string   `json:"domain"`
-	Pack       string   `json:"pack"`
-	Kernel     string   `json:"kernel"`
-	Recommend  string   `json:"recommend"`
-	Compare    string   `json:"compare"`
-	Risk       string   `json:"risk"`
-	Reboot     bool     `json:"reboot"`
-	Namespaced bool     `json:"namespaced"`
-	Rationale  string   `json:"rationale"`
-	Advice     string   `json:"advice"`
-	Verify     string   `json:"verify"`
-	Sources    []string `json:"sources"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Kind       string `json:"kind"`
+	Param      string `json:"param"`
+	Domain     string `json:"domain"`
+	Pack       string `json:"pack"`
+	Kernel     string `json:"kernel"`
+	Recommend  string `json:"recommend"`
+	Compare    string `json:"compare"`
+	Risk       string `json:"risk"`
+	Reboot     bool   `json:"reboot"`
+	Namespaced bool   `json:"namespaced"`
+	Rationale  string `json:"rationale"`
+	Advice     string `json:"advice"`
+	Verify     string `json:"verify"`
+	// Sources are the structured citations; SourceURLs is the former
+	// "sources" shape (URL strings), kept for existing consumers.
+	Sources    []render.Cite `json:"sources"`
+	SourceURLs []string      `json:"source_urls"`
 }
 
-func entryOf(r rules.Rule) explainEntry {
-	srcs := r.Sources
+func entryOf(r rules.Rule, c *render.Citations) explainEntry {
+	srcs := c.For(advisor.Recommendation{RuleID: r.ID})
 	if srcs == nil {
-		srcs = []string{}
+		srcs = []render.Cite{}
 	}
 	return explainEntry{
 		ID: r.ID, Title: r.Title, Kind: r.Kind, Param: r.Param, Domain: r.Domain, Pack: r.Pack,
 		Kernel: r.Applies.Kernel, Recommend: r.Recommend, Compare: r.Compare, Risk: r.Risk, Reboot: r.Reboot,
 		Namespaced: r.Namespaced, Rationale: strings.TrimSpace(r.Rationale), Advice: strings.TrimSpace(r.Advice),
-		Verify: r.Verify, Sources: srcs,
+		Verify: r.Verify, Sources: srcs, SourceURLs: r.SourceURLs(),
 	}
 }
 
-func explainJSON(w io.Writer, rs []rules.Rule, recs []advisor.Recommendation) error {
+func explainJSON(w io.Writer, rs []rules.Rule, recs []advisor.Recommendation, c *render.Citations) error {
 	doc := explainDoc{Entries: []explainEntry{}, Results: []render.JSONRecommendation{}}
 	for _, r := range rs {
-		doc.Entries = append(doc.Entries, entryOf(r))
+		doc.Entries = append(doc.Entries, entryOf(r, c))
 	}
 	for _, r := range recs {
-		doc.Results = append(doc.Results, render.ToJSON(r))
+		doc.Results = append(doc.Results, render.ToJSONWith(r, c))
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(doc)
 }
 
-func explainText(w io.Writer, rs []rules.Rule, recs []advisor.Recommendation) error {
+func explainText(w io.Writer, rs []rules.Rule, recs []advisor.Recommendation, c *render.Citations) error {
 	var b strings.Builder
 	for i, r := range rs {
-		e := entryOf(r)
+		e := entryOf(r, c)
 		if i > 0 {
 			b.WriteString("\n----\n\n")
 		}
@@ -125,8 +129,10 @@ func explainText(w io.Writer, rs []rules.Rule, recs []advisor.Recommendation) er
 		}
 		if len(e.Sources) > 0 {
 			b.WriteString("\nSources:\n")
-			for _, s := range e.Sources {
-				fmt.Fprintf(&b, "  %s\n", s)
+			for i, s := range e.Sources {
+				for _, l := range s.Lines(fmt.Sprintf("  [%d] ", i+1), 100) {
+					b.WriteString(l + "\n")
+				}
 			}
 		}
 		b.WriteString("\nOn this host:\n")

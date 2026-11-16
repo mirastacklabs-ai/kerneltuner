@@ -101,20 +101,27 @@ func pick(recs []advisor.Recommendation, kinds ...string) []advisor.Recommendati
 	return out
 }
 
-func comment(r advisor.Recommendation) string {
-	src := ""
-	if len(r.Sources) > 0 {
-		src = " — " + r.Sources[0]
-	}
+// comment is the comment block above a setting: every contributing rule id,
+// the title, and every source of those rules with its quote.
+func comment(r advisor.Recommendation, m Meta) string {
 	ids := r.RuleID
 	if len(r.Contributors) > 1 {
 		ids = strings.Join(r.Contributors, ", ")
 	}
-	c := fmt.Sprintf("# %s: %s%s\n", ids, r.Title, src)
+	c := fmt.Sprintf("# %s: %s\n", ids, r.Title)
 	if len(r.Contributors) > 1 && r.Note != "" {
 		c += "# " + r.Note + "\n"
 	}
-	return c
+	return c + sourceComments(r, m, "# ")
+}
+
+// sourceComments lists every source of r (every contributor's, when merged).
+func sourceComments(r advisor.Recommendation, m Meta, prefix string) string {
+	var b strings.Builder
+	for _, c := range m.Cites.For(r) {
+		b.WriteString(c.commentLines(prefix, len(r.Contributors) > 1))
+	}
+	return b.String()
 }
 
 // targets lists the items a recommendation covers: Targets for a summarized
@@ -136,7 +143,7 @@ func Sysctl(recs []advisor.Recommendation, m Meta) string {
 	b.WriteString(m.header("# "))
 	b.WriteString("# Install as /etc/sysctl.d/90-kerneltuner.conf, then: sysctl --system\n")
 	for _, r := range rs {
-		b.WriteString("\n" + comment(r))
+		b.WriteString("\n" + comment(r, m))
 		fmt.Fprintf(&b, "%s = %s\n", r.Param, r.Proposed)
 	}
 	return b.String()
@@ -167,7 +174,7 @@ func Limits(recs []advisor.Recommendation, m Meta) (dropins map[string]string, l
 				b.WriteString("# Then: systemctl daemon-reload && systemctl restart " + r.Target + "\n\n[Service]\n")
 				units[r.Target] = b
 			}
-			b.WriteString(comment(r))
+			b.WriteString(comment(r, m))
 			fmt.Fprintf(b, "%s=%s\n", r.Param, r.Proposed)
 			continue
 		}
@@ -181,6 +188,7 @@ func Limits(recs []advisor.Recommendation, m Meta) (dropins map[string]string, l
 			ids = strings.Join(r.Contributors, ", ")
 		}
 		fmt.Fprintf(&fb, "\n# %s (%s): %s\n", ids, r.Target, r.Title)
+		fb.WriteString(sourceComments(r, m, "# "))
 		item, val := limitsConfLine(r)
 		fmt.Fprintf(&fb, "*\tsoft\t%s\t%s\n*\thard\t%s\t%s\n", item, val, item, val)
 	}
@@ -225,14 +233,14 @@ func Tuned(recs []advisor.Recommendation, m Meta) string {
 	if len(sysctls) > 0 {
 		b.WriteString("\n[sysctl]\n")
 		for _, r := range sysctls {
-			b.WriteString(comment(r))
+			b.WriteString(comment(r, m))
 			fmt.Fprintf(&b, "%s=%s\n", r.Param, r.Proposed)
 		}
 	}
 	if len(sysfs) > 0 {
 		b.WriteString("\n[sysfs]\n")
 		for _, r := range sysfs {
-			b.WriteString(comment(r))
+			b.WriteString(comment(r, m))
 			for _, t := range targets(r) {
 				fmt.Fprintf(&b, "%s=%s\n", strings.ReplaceAll(r.Param, "{item}", t), r.Proposed)
 			}
@@ -268,7 +276,7 @@ func Cmdline(recs []advisor.Recommendation, m Meta) string {
 	b.WriteString(m.header("# "))
 	b.WriteString("#\n# !!! REBOOT REQUIRED: this changes the kernel command line !!!\n#\n\n")
 	for _, r := range rs {
-		b.WriteString(comment(r))
+		b.WriteString(comment(r, m))
 	}
 	fmt.Fprintf(&b, "\n# Add to /etc/default/grub:\nGRUB_CMDLINE_LINUX=\"$GRUB_CMDLINE_LINUX %s\"\n", args)
 	b.WriteString("\n# Then regenerate the boot config and reboot:\n")
@@ -311,7 +319,7 @@ func NIC(recs []advisor.Recommendation, m Meta) string {
 	b.WriteString("# .link file ([Link] RxBufferSize=, TxBufferSize=, CombinedChannels=), NetworkManager\n")
 	b.WriteString("# (ethtool.ring-rx, ethtool.channels-combined) or a udev rule.\n\n")
 	for _, r := range rs {
-		b.WriteString(comment(r))
+		b.WriteString(comment(r, m))
 	}
 	b.WriteString("\n")
 	for _, n := range order {
@@ -371,8 +379,18 @@ func Runtime(recs []advisor.Recommendation, m Meta) string {
 			if r.Verify != "" {
 				fmt.Fprintf(&b, "\nVerify: %s\n", r.Verify)
 			}
-			if len(r.Sources) > 0 {
-				fmt.Fprintf(&b, "\nSource: %s\n", r.Sources[0])
+			if cs := m.Cites.For(r); len(cs) > 0 {
+				b.WriteString("\nSources:\n")
+				for _, c := range cs {
+					line := "- " + c.URL
+					if c.Section != "" {
+						line += " — " + c.Section
+					}
+					b.WriteString(line + "\n")
+					if c.Quote != "" {
+						fmt.Fprintf(&b, "  > \"%s\"\n", strings.Join(strings.Fields(c.Quote), " "))
+					}
+				}
 			}
 		}
 	}

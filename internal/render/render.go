@@ -2,9 +2,7 @@
 package render
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +18,12 @@ type Meta struct {
 	Date     time.Time // zero means now (UTC)
 	Facts    *facts.Facts
 	Workload *workload.Workload
+	// Cites resolves recommendations to their citations. Nil falls back to
+	// the bare URLs in Recommendation.Sources.
+	Cites *Citations
+	// NoCitations drops footnote markers and the References section from the
+	// text and markdown reports (scan --no-citations).
+	NoCitations bool
 }
 
 func (m Meta) date() string {
@@ -82,10 +86,27 @@ func firstSentence(s string) string {
 	return s
 }
 
-func summary(m Meta) string {
+// summaryLines is the host summary, split at " | " so no line exceeds width.
+func summaryLines(m Meta, width int) []string {
+	var lines []string
+	cur := ""
+	for _, p := range summaryParts(m) {
+		if cur != "" && len(cur)+3+len(p) > width {
+			lines = append(lines, cur)
+			cur = ""
+		}
+		if cur != "" {
+			cur += " | "
+		}
+		cur += p
+	}
+	return append(lines, cur)
+}
+
+func summaryParts(m Meta) []string {
 	f := m.Facts
 	if f == nil {
-		return "kerneltuner " + m.version()
+		return []string{"kerneltuner " + m.version()}
 	}
 	parts := []string{"kerneltuner " + m.version()}
 	if f.Kernel.Release != "" {
@@ -103,7 +124,7 @@ func summary(m Meta) string {
 	}
 	parts = append(parts, "accelerators: "+accelSummary(f.Accel))
 	parts = append(parts, fmt.Sprintf("Warnings: %d", len(f.Warnings)))
-	return strings.Join(parts, " | ")
+	return parts
 }
 
 func accelSummary(a []facts.Accelerator) string {
@@ -146,165 +167,4 @@ func evidenceText(r advisor.Recommendation) string {
 		parts = append(parts, fmt.Sprintf("%s=%.3g (> %.3g)", e.Metric, e.Value, e.Threshold))
 	}
 	return strings.Join(parts, "; ")
-}
-
-// Text writes the human-readable report, grouped by domain and sorted by
-// score. Without all, only recommend, firing and error results are shown.
-func Text(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) error {
-	var b strings.Builder
-	b.WriteString(summary(m) + "\n\n")
-
-	var shown []advisor.Recommendation
-	for _, r := range recs {
-		if all || Shown(r) {
-			shown = append(shown, r)
-		}
-	}
-	sort.SliceStable(shown, func(i, j int) bool {
-		if di, dj := domainRank(shown[i].Domain), domainRank(shown[j].Domain); di != dj {
-			return di < dj
-		}
-		return shown[i].Score > shown[j].Score
-	})
-	if len(shown) == 0 {
-		b.WriteString("Nothing to recommend.\n")
-	}
-	for i := 0; i < len(shown); {
-		j := i
-		for j < len(shown) && shown[j].Domain == shown[i].Domain {
-			j++
-		}
-		writeGroup(&b, shown[i].Domain, shown[i:j])
-		i = j
-	}
-	if conflicts := advisor.Conflicts(recs); len(conflicts) > 0 {
-		fmt.Fprintf(&b, "conflicts: %d setting(s) have disagreeing proposals; generate and apply merge them\n", len(conflicts))
-		for _, c := range conflicts {
-			fmt.Fprintf(&b, "  %s\n", c)
-		}
-	}
-	if hidden := len(recs) - len(shown); hidden > 0 {
-		fmt.Fprintf(&b, "\n%d more result(s) hidden (ok, not-applicable, managed, host-only); use --all to show them.\n", hidden)
-	}
-	if m.Facts != nil {
-		for _, wmsg := range m.Facts.Warnings {
-			fmt.Fprintf(&b, "warning: %s\n", wmsg)
-		}
-	}
-	_, err := io.WriteString(w, b.String())
-	return err
-}
-
-func writeGroup(b *strings.Builder, domain string, rs []advisor.Recommendation) {
-	if domain == "" {
-		domain = "other"
-	}
-	fmt.Fprintf(b, "== %s ==\n", strings.ToUpper(domain))
-	rows := [][]string{{"STATUS", "RULE", "TARGET", "CURRENT -> PROPOSED", "RISK", "EVIDENCE"}}
-	for _, r := range rs {
-		rows = append(rows, []string{string(r.Status), r.RuleID, r.Target, change(r), r.Risk, evidenceText(r)})
-	}
-	widths := make([]int, 5)
-	for _, row := range rows {
-		for c := 0; c < 5; c++ {
-			if len(row[c]) > widths[c] {
-				widths[c] = len(row[c])
-			}
-		}
-	}
-	line := func(row []string) {
-		var cells []string
-		for c := 0; c < 5; c++ {
-			cells = append(cells, fmt.Sprintf("%-*s", widths[c], row[c]))
-		}
-		b.WriteString(strings.TrimRight(strings.Join(cells, "  ")+"  "+row[5], " ") + "\n")
-	}
-	line(rows[0])
-	for i, r := range rs {
-		line(rows[i+1])
-		reason := firstSentence(r.Rationale)
-		switch {
-		case r.Status == advisor.StatusError, r.ManagedBy != "":
-			reason = firstSentence(r.Advice)
-		case r.Reboot:
-			reason = "[reboot required] " + reason
-		}
-		if reason != "" {
-			fmt.Fprintf(b, "    %s\n", reason)
-		}
-	}
-	b.WriteString("\n")
-}
-
-// JSONRecommendation is the stable JSON shape of one result.
-type JSONRecommendation struct {
-	RuleID    string         `json:"rule_id"`
-	Kind      string         `json:"kind"`
-	Domain    string         `json:"domain"`
-	Param     string         `json:"param"`
-	Target    string         `json:"target"`
-	Title     string         `json:"title"`
-	Current   string         `json:"current"`
-	Proposed  string         `json:"proposed"`
-	Status    string         `json:"status"`
-	Risk      string         `json:"risk"`
-	Reboot    bool           `json:"reboot"`
-	Score     float64        `json:"score"`
-	Evidence  []JSONEvidence `json:"evidence"`
-	ManagedBy string         `json:"managed_by"`
-	Rationale string         `json:"rationale"`
-	Advice    string         `json:"advice"`
-	Verify    string         `json:"verify"`
-	Sources   []string       `json:"sources"`
-	// Targets lists every item behind a foreach_summary recommendation.
-	Targets []string `json:"targets,omitempty"`
-}
-
-// JSONEvidence is one evidence hit.
-type JSONEvidence struct {
-	Metric    string  `json:"metric"`
-	Value     float64 `json:"value"`
-	Threshold float64 `json:"threshold"`
-}
-
-// JSONReport is the document written by JSON.
-type JSONReport struct {
-	Version         string               `json:"version"`
-	Kernel          string               `json:"kernel"`
-	Warnings        []string             `json:"warnings"`
-	Recommendations []JSONRecommendation `json:"recommendations"`
-}
-
-// ToJSON converts a recommendation to its stable JSON shape.
-func ToJSON(r advisor.Recommendation) JSONRecommendation {
-	j := JSONRecommendation{
-		RuleID: r.RuleID, Kind: r.Kind, Domain: r.Domain, Param: r.Param, Target: r.Target, Title: r.Title,
-		Current: r.Current, Proposed: r.Proposed, Status: string(r.Status), Risk: r.Risk, Reboot: r.Reboot,
-		Score: r.Score, Evidence: []JSONEvidence{}, ManagedBy: r.ManagedBy, Rationale: r.Rationale,
-		Advice: r.Advice, Verify: r.Verify, Sources: r.Sources, Targets: r.Targets,
-	}
-	if j.Sources == nil {
-		j.Sources = []string{}
-	}
-	for _, e := range r.Evidence {
-		j.Evidence = append(j.Evidence, JSONEvidence{e.Metric, e.Value, e.Threshold})
-	}
-	return j
-}
-
-// JSON writes the report as indented JSON with stable field names.
-func JSON(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) error {
-	rep := JSONReport{Version: m.version(), Warnings: []string{}, Recommendations: []JSONRecommendation{}}
-	if m.Facts != nil {
-		rep.Kernel = m.Facts.Kernel.Release
-		rep.Warnings = append(rep.Warnings, m.Facts.Warnings...)
-	}
-	for _, r := range recs {
-		if all || Shown(r) {
-			rep.Recommendations = append(rep.Recommendations, ToJSON(r))
-		}
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(rep)
 }

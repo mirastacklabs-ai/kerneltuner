@@ -15,6 +15,7 @@ import (
 type sourceOut struct {
 	URL          string `json:"url"`
 	Project      string `json:"project"`
+	Title        string `json:"title"`
 	Covers       string `json:"covers"`
 	LastReviewed string `json:"last_reviewed"`
 }
@@ -25,6 +26,10 @@ func newSourcesCmd(g *globalOpts) *cobra.Command {
 		Short: "List upstream docs behind the active recommendations",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if check, _ := cmd.Flags().GetBool("check"); check {
+				only, _ := cmd.Flags().GetString("only")
+				return runSourcesCheck(cmd, g, only)
+			}
 			all, _ := cmd.Flags().GetBool("all")
 			p, err := loadPipeline(g)
 			if err != nil {
@@ -61,7 +66,7 @@ func newSourcesCmd(g *globalOpts) *cobra.Command {
 			out := make([]sourceOut, 0, len(urls))
 			for _, u := range urls {
 				s := registry[u]
-				out = append(out, sourceOut{URL: u, Project: s.Project, Covers: s.Covers, LastReviewed: s.LastReviewed})
+				out = append(out, sourceOut{URL: u, Project: s.Project, Title: s.Title, Covers: s.Covers, LastReviewed: s.LastReviewed})
 			}
 			w := cmd.OutOrStdout()
 			if g.JSON {
@@ -76,6 +81,9 @@ func newSourcesCmd(g *globalOpts) *cobra.Command {
 			for _, s := range out {
 				line := s.URL
 				var meta []string
+				if s.Title != "" {
+					meta = append(meta, s.Title)
+				}
 				if s.Project != "" {
 					meta = append(meta, s.Project)
 				}
@@ -95,6 +103,8 @@ func newSourcesCmd(g *globalOpts) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().Bool("check", false, "opt-in network check: fetch every registered URL and verify it still contains the quotes rules cite (exit 1 on any failure)")
+	cmd.Flags().String("only", "", "with --check: only sources registered in this pack (e.g. kernel/network or network)")
 	cmd.Flags().Bool("all", false, "list every registered source, not only those behind active recommendations")
 	return cmd
 }

@@ -36,7 +36,7 @@ func ExitCode(err error) int {
 var riskRank = map[string]int{"low": 1, "medium": 2, "high": 3}
 
 func (p *pipeline) meta() render.Meta {
-	return render.Meta{Version: Version, Facts: p.Facts, Workload: p.Workload}
+	return render.Meta{Version: Version, Facts: p.Facts, Workload: p.Workload, Cites: render.NewCitations(p.Rules, p.Sources)}
 }
 
 func cmdContext(cmd *cobra.Command) context.Context {
@@ -55,6 +55,19 @@ func newScanCmd(g *globalOpts) *cobra.Command {
 			sampleDur, _ := cmd.Flags().GetDuration("sample")
 			all, _ := cmd.Flags().GetBool("all")
 			failOn, _ := cmd.Flags().GetString("fail-on")
+			format, _ := cmd.Flags().GetString("format")
+			noCites, _ := cmd.Flags().GetBool("no-citations")
+			switch {
+			case g.JSON && (format == "" || format == "json"):
+				format = "json"
+			case g.JSON:
+				return fmt.Errorf("--json conflicts with --format %s", format)
+			case format == "":
+				format = "text"
+			}
+			if format != "text" && format != "json" && format != "md" {
+				return fmt.Errorf("--format %q: want text, json or md", format)
+			}
 			if failOn != "" && riskRank[failOn] == 0 {
 				return fmt.Errorf("--fail-on %q: want low, medium or high", failOn)
 			}
@@ -68,10 +81,15 @@ func newScanCmd(g *globalOpts) *cobra.Command {
 				return err
 			}
 			recs := p.evaluate(values, rates)
-			if g.JSON {
-				err = render.JSON(cmd.OutOrStdout(), recs, p.meta(), all)
-			} else {
-				err = render.Text(cmd.OutOrStdout(), recs, p.meta(), all)
+			meta := p.meta()
+			meta.NoCitations = noCites
+			switch format {
+			case "json":
+				err = render.JSON(cmd.OutOrStdout(), recs, meta, all)
+			case "md":
+				err = render.Markdown(cmd.OutOrStdout(), recs, meta, all)
+			default:
+				err = render.Text(cmd.OutOrStdout(), recs, meta, all)
 			}
 			if err != nil {
 				return err
@@ -84,6 +102,8 @@ func newScanCmd(g *globalOpts) *cobra.Command {
 	}
 	addFixtureFlag(cmd, g)
 	cmd.Flags().Duration("sample", 0, "sample live counters for this long to compute rates")
+	cmd.Flags().String("format", "", "output format: text (default), json or md (shareable Markdown report)")
+	cmd.Flags().Bool("no-citations", false, "omit footnote markers and the References section (text and md)")
 	cmd.Flags().Bool("all", false, "include ok, not-applicable and managed results")
 	cmd.Flags().String("fail-on", "", "exit 2 if recommend/firing at risk >= LEVEL (low|medium|high); off by default")
 	return cmd

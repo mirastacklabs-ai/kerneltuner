@@ -4,7 +4,31 @@ Rules are data. Layout: `rules/<area>/<pack>/*.yaml`, where area is `kernel`, `a
 
 ## Sources registry
 
-Every pack directory has its own `sources.yaml`: a list of `{url, project, covers, last_reviewed}`. Every URL in a rule's `sources` must appear in the `sources.yaml` of some pack (`kerneltuner validate` checks this). There is no global registry.
+Every pack directory has its own `sources.yaml`: a list of `{url, project, title, covers, last_reviewed}` (`title` is optional: the page's human title, shown in reports). Every URL in a rule's `sources` must appear in the `sources.yaml` of some pack (`kerneltuner validate` checks this). There is no global registry.
+
+## Citations
+
+A rule's `sources` list takes two forms, which can be mixed:
+
+```yaml
+sources:
+  - https://docs.kernel.org/networking/ip-sysctl.html          # URL only: no quote yet
+  - url: https://docs.kernel.org/networking/ip-sysctl.html
+    section: somaxconn                                          # optional heading or anchor text
+    quote: >-
+      somaxconn - INTEGER: Limit of socket listen() backlog.    # at most 300 characters
+```
+
+**The quote must be verbatim from the cited page and must support the claim the rule makes.** Copy it from the page; do not paraphrase, shorten with `...`, merge sentences from different places, or quote text that merely sits near the claim. Reports print it under the rule as evidence, and `kerneltuner sources --check` fetches the page weekly and fails if the quote is gone, so a paraphrase breaks the check.
+
+Rules of thumb:
+- One quote per source entry. If a rule rests on two passages, list the URL twice with a quote each.
+- Prefer the sentence that carries the number or the behaviour (the default, the version, the unit), not the page introduction.
+- Plain text only: no markdown or HTML. Whitespace and typographic quotes or dashes do not matter to the check; wording and case do.
+- `section` is the nearest heading or the anchor (`#tcp_rmem`), so a reader can find the passage.
+- Bump `last_reviewed` in `sources.yaml` when you re-read the page.
+
+`kerneltuner validate` rejects a quote over 300 characters and warns about sources without one; `kerneltuner validate --strict-citations` makes that an error (it will become the default once quotes are backfilled). `kerneltuner sources --check [--only <pack>]` is the opt-in network check.
 
 ## Ecosystem data
 

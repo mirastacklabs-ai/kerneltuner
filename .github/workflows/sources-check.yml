@@ -1,0 +1,74 @@
+name: sources-check
+
+# Weekly: fetch every registered upstream doc and verify that it still exists
+# and still contains the quotes the rules cite from it. Drift opens (or
+# updates) the single issue labelled "sources-drift"; a clean run closes it.
+# The check sends no host data: one GET per URL with a fixed User-Agent.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sources-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: kerneltuner sources --check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build
+        run: CGO_ENABLED=0 go build -trimpath -o bin/kerneltuner ./cmd/kerneltuner
+      - name: kerneltuner sources --check
+        id: check
+        run: |
+          code=0
+          ./bin/kerneltuner sources --check | tee sources-report.txt || code=$?
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+      - name: open, update or close the sources-drift issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CHECK_CODE: ${{ steps.check.outputs.code }}
+        run: |
+          existing="$(gh issue list --label sources-drift --state open --json number --jq '.[0].number // empty')"
+          if [ "${CHECK_CODE}" = "0" ]; then
+            if [ -n "${existing}" ]; then
+              gh issue close "${existing}" --comment "All registered sources check out again (${RUN_URL}). Closing."
+            fi
+            exit 0
+          fi
+          {
+            echo "\`kerneltuner sources --check\` found drift in the registered upstream docs (${RUN_URL})."
+            echo
+            echo "A source is REDIRECTED, unreachable, an HTTP error, or no longer contains a quote a rule cites. Re-read the page, then fix the rule's quote or the registry URL, and bump \`last_reviewed\`."
+            echo
+            echo '```'
+            grep -v '^OK ' sources-report.txt | head -c 60000
+            echo '```'
+          } > issue-body.md
+          if [ -n "${existing}" ]; then
+            gh issue edit "${existing}" --body-file issue-body.md
+            gh issue comment "${existing}" --body "Still failing as of ${RUN_URL}."
+          else
+            gh label create sources-drift --description "Upstream doc moved or no longer matches a cited quote" --color D93F0B 2>/dev/null || true
+            gh issue create --title "Sources drift: registered docs changed" --label sources-drift --body-file issue-body.md
+          fi
+      - name: fail the run on drift
+        if: steps.check.outputs.code != '0'
+        run: exit 1

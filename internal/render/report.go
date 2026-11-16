@@ -1,0 +1,343 @@
+package render
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+
+	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
+)
+
+// textWidth is the width the text report wraps its prose and references to.
+const textWidth = 100
+
+// view is a report prepared for rendering: the findings to show, their
+// conflicts and the footnote numbers of both, assigned in reading order
+// (conflicts first, then findings by domain).
+type view struct {
+	shown     []advisor.Recommendation
+	marks     [][]int // footnote numbers per shown finding
+	conflicts []advisor.Conflict
+	cmarks    [][]int // footnote numbers per conflict
+	fn        *footnotes
+}
+
+func newView(recs []advisor.Recommendation, m Meta, all bool) *view {
+	v := &view{fn: newFootnotes()}
+	for _, r := range recs {
+		if all || Shown(r) {
+			v.shown = append(v.shown, r)
+		}
+	}
+	sort.SliceStable(v.shown, func(i, j int) bool {
+		if di, dj := domainRank(v.shown[i].Domain), domainRank(v.shown[j].Domain); di != dj {
+			return di < dj
+		}
+		return v.shown[i].Score > v.shown[j].Score
+	})
+	v.conflicts = advisor.Conflicts(recs)
+	for _, c := range v.conflicts {
+		var ns []int
+		if !m.NoCitations {
+			ns = v.fn.mark(m.Cites.For(advisor.Recommendation{Contributors: c.Rules}))
+		}
+		v.cmarks = append(v.cmarks, ns)
+	}
+	for _, r := range v.shown {
+		var ns []int
+		if !m.NoCitations {
+			ns = v.fn.mark(m.Cites.For(r))
+		}
+		v.marks = append(v.marks, ns)
+	}
+	return v
+}
+
+// groups splits the shown findings into runs of one domain, as [start, end).
+func (v *view) groups() [][2]int {
+	var gs [][2]int
+	for i := 0; i < len(v.shown); {
+		j := i
+		for j < len(v.shown) && v.shown[j].Domain == v.shown[i].Domain {
+			j++
+		}
+		gs = append(gs, [2]int{i, j})
+		i = j
+	}
+	return gs
+}
+
+func domainName(d string) string {
+	if d == "" {
+		return "other"
+	}
+	return d
+}
+
+// reasonOf is the one-line explanation printed under a finding.
+func reasonOf(r advisor.Recommendation) string {
+	reason := firstSentence(r.Rationale)
+	switch {
+	case r.Status == advisor.StatusError, r.ManagedBy != "":
+		reason = firstSentence(r.Advice)
+	case r.Reboot:
+		reason = "[reboot required] " + reason
+	}
+	return reason
+}
+
+func conflictLine(c advisor.Conflict) string {
+	return c.String()
+}
+
+// Text writes the human-readable report, grouped by domain and sorted by
+// score. Without all, only recommend, firing and error results are shown.
+// Findings carry footnote markers; a References section lists the sources.
+func Text(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) error {
+	v := newView(recs, m, all)
+	var b strings.Builder
+	b.WriteString(strings.Join(summaryLines(m, textWidth), "\n") + "\n\n")
+
+	if len(v.conflicts) > 0 {
+		fmt.Fprintf(&b, "CONFLICT: %d setting(s) have disagreeing proposals; generate and apply merge them\n", len(v.conflicts))
+		for i, c := range v.conflicts {
+			line := "  " + conflictLine(c)
+			if mk := markers(v.cmarks[i]); mk != "" {
+				line += " " + mk
+			}
+			b.WriteString(line + "\n")
+		}
+		b.WriteString("\n")
+	}
+	if len(v.shown) == 0 {
+		b.WriteString("Nothing to recommend.\n")
+	}
+	for _, g := range v.groups() {
+		writeGroup(&b, v.shown[g[0]:g[1]], v.marks[g[0]:g[1]])
+	}
+	if !m.NoCitations && len(v.fn.order) > 0 {
+		writeReferences(&b, v.fn.order)
+	}
+	if hidden := len(recs) - len(v.shown); hidden > 0 {
+		fmt.Fprintf(&b, "\n%d more result(s) hidden (ok, not-applicable, managed, host-only); use --all to show them.\n", hidden)
+	}
+	if m.Facts != nil {
+		for _, wmsg := range m.Facts.Warnings {
+			fmt.Fprintf(&b, "warning: %s\n", wmsg)
+		}
+	}
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+func writeGroup(b *strings.Builder, rs []advisor.Recommendation, marks [][]int) {
+	fmt.Fprintf(b, "== %s ==\n", strings.ToUpper(domainName(rs[0].Domain)))
+	rows := [][]string{{"STATUS", "RULE", "TARGET", "CURRENT -> PROPOSED", "RISK", "EVIDENCE"}}
+	for i, r := range rs {
+		last := strings.TrimSpace(evidenceText(r) + " " + markers(marks[i]))
+		rows = append(rows, []string{string(r.Status), r.RuleID, r.Target, change(r), r.Risk, last})
+	}
+	widths := make([]int, 5)
+	for _, row := range rows {
+		for c := 0; c < 5; c++ {
+			if len(row[c]) > widths[c] {
+				widths[c] = len(row[c])
+			}
+		}
+	}
+	line := func(row []string) {
+		var cells []string
+		for c := 0; c < 5; c++ {
+			cells = append(cells, fmt.Sprintf("%-*s", widths[c], row[c]))
+		}
+		b.WriteString(strings.TrimRight(strings.Join(cells, "  ")+"  "+row[5], " ") + "\n")
+	}
+	line(rows[0])
+	for i, r := range rs {
+		line(rows[i+1])
+		for _, l := range wrap(reasonOf(r), textWidth-4) {
+			fmt.Fprintf(b, "    %s\n", l)
+		}
+	}
+	b.WriteString("\n")
+}
+
+func writeReferences(b *strings.Builder, refs []Cite) {
+	b.WriteString("References\n")
+	for i, c := range refs {
+		for _, l := range c.Lines(fmt.Sprintf("[%d] ", i+1), textWidth) {
+			b.WriteString(l + "\n")
+		}
+	}
+}
+
+// mdCell makes s safe inside a Markdown table cell.
+func mdCell(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	return strings.ReplaceAll(s, "|", "\\|")
+}
+
+func mdCode(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "`" + strings.ReplaceAll(mdCell(s), "`", "'") + "`"
+}
+
+// Markdown writes a shareable Markdown report: host summary, a conflicts
+// block, one findings table per domain with footnote markers, and References
+// with quotes and links.
+func Markdown(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) error {
+	v := newView(recs, m, all)
+	var b strings.Builder
+	b.WriteString("# kerneltuner report\n\n")
+	fmt.Fprintf(&b, "Generated by kerneltuner %s on %s. Review before applying: these are recommendations, not verified for your workload.\n\n", m.version(), m.date())
+	b.WriteString("## Host\n\n")
+	if m.Facts != nil {
+		for _, p := range summaryParts(m)[1:] { // [0] is the tool version, shown above
+			fmt.Fprintf(&b, "- %s\n", p)
+		}
+	}
+	b.WriteString("\n")
+
+	if len(v.conflicts) > 0 {
+		fmt.Fprintf(&b, "> **CONFLICT**: %d setting(s) have disagreeing proposals; generate and apply merge them.\n>\n", len(v.conflicts))
+		for i, c := range v.conflicts {
+			line := "> - " + conflictLine(c)
+			if mk := markers(v.cmarks[i]); mk != "" {
+				line += " " + mk
+			}
+			b.WriteString(line + "\n")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("## Findings\n\n")
+	if len(v.shown) == 0 {
+		b.WriteString("Nothing to recommend.\n\n")
+	}
+	for _, g := range v.groups() {
+		rs, marks := v.shown[g[0]:g[1]], v.marks[g[0]:g[1]]
+		fmt.Fprintf(&b, "### %s\n\n", strings.ToUpper(domainName(rs[0].Domain)))
+		b.WriteString("| Status | Rule | Target | Change | Risk | Why | Refs |\n|---|---|---|---|---|---|---|\n")
+		for i, r := range rs {
+			why := reasonOf(r)
+			if ev := evidenceText(r); ev != "" {
+				why = strings.TrimSpace(why + " Evidence: " + ev)
+			}
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s |\n", r.Status, mdCode(r.RuleID), mdCode(r.Target),
+				mdCode(change(r)), r.Risk, mdCell(why), markers(marks[i]))
+		}
+		b.WriteString("\n")
+	}
+	if !m.NoCitations && len(v.fn.order) > 0 {
+		b.WriteString("## References\n\n")
+		for i, c := range v.fn.order {
+			fmt.Fprintf(&b, "- **[%d]** %s\n", i+1, mdCell(c.refHead()))
+			if c.Quote != "" {
+				fmt.Fprintf(&b, "  > \"%s\"\n  >\n", strings.Join(strings.Fields(c.Quote), " "))
+				fmt.Fprintf(&b, "  > <%s>\n", c.URL)
+			} else {
+				fmt.Fprintf(&b, "  <%s>\n", c.URL)
+			}
+		}
+		b.WriteString("\n")
+	}
+	if hidden := len(recs) - len(v.shown); hidden > 0 {
+		fmt.Fprintf(&b, "%d more result(s) hidden (ok, not-applicable, managed, host-only); use --all to show them.\n\n", hidden)
+	}
+	if m.Facts != nil && len(m.Facts.Warnings) > 0 {
+		b.WriteString("## Warnings\n\n")
+		for _, wmsg := range m.Facts.Warnings {
+			fmt.Fprintf(&b, "- %s\n", mdCell(wmsg))
+		}
+	}
+	_, err := io.WriteString(w, strings.TrimRight(b.String(), "\n")+"\n")
+	return err
+}
+
+// JSONRecommendation is the stable JSON shape of one result.
+//
+// Sources holds the structured citations; SourceURLs is the former
+// "sources" shape (a list of URL strings), kept for existing consumers.
+type JSONRecommendation struct {
+	RuleID     string         `json:"rule_id"`
+	Kind       string         `json:"kind"`
+	Domain     string         `json:"domain"`
+	Param      string         `json:"param"`
+	Target     string         `json:"target"`
+	Title      string         `json:"title"`
+	Current    string         `json:"current"`
+	Proposed   string         `json:"proposed"`
+	Status     string         `json:"status"`
+	Risk       string         `json:"risk"`
+	Reboot     bool           `json:"reboot"`
+	Score      float64        `json:"score"`
+	Evidence   []JSONEvidence `json:"evidence"`
+	ManagedBy  string         `json:"managed_by"`
+	Rationale  string         `json:"rationale"`
+	Advice     string         `json:"advice"`
+	Verify     string         `json:"verify"`
+	Sources    []Cite         `json:"sources"`
+	SourceURLs []string       `json:"source_urls"`
+	// Targets lists every item behind a foreach_summary recommendation.
+	Targets []string `json:"targets,omitempty"`
+}
+
+// JSONEvidence is one evidence hit.
+type JSONEvidence struct {
+	Metric    string  `json:"metric"`
+	Value     float64 `json:"value"`
+	Threshold float64 `json:"threshold"`
+}
+
+// JSONReport is the document written by JSON.
+type JSONReport struct {
+	Version         string               `json:"version"`
+	Kernel          string               `json:"kernel"`
+	Warnings        []string             `json:"warnings"`
+	Recommendations []JSONRecommendation `json:"recommendations"`
+}
+
+// ToJSON converts a recommendation to its stable JSON shape, with sources as
+// bare URLs.
+func ToJSON(r advisor.Recommendation) JSONRecommendation { return ToJSONWith(r, nil) }
+
+// ToJSONWith is ToJSON with sources resolved through c (nil: bare URLs).
+func ToJSONWith(r advisor.Recommendation, c *Citations) JSONRecommendation {
+	j := JSONRecommendation{
+		RuleID: r.RuleID, Kind: r.Kind, Domain: r.Domain, Param: r.Param, Target: r.Target, Title: r.Title,
+		Current: r.Current, Proposed: r.Proposed, Status: string(r.Status), Risk: r.Risk, Reboot: r.Reboot,
+		Score: r.Score, Evidence: []JSONEvidence{}, ManagedBy: r.ManagedBy, Rationale: r.Rationale,
+		Advice: r.Advice, Verify: r.Verify, Targets: r.Targets,
+		Sources: c.For(r), SourceURLs: r.Sources,
+	}
+	if j.Sources == nil {
+		j.Sources = []Cite{}
+	}
+	if j.SourceURLs == nil {
+		j.SourceURLs = []string{}
+	}
+	for _, e := range r.Evidence {
+		j.Evidence = append(j.Evidence, JSONEvidence{e.Metric, e.Value, e.Threshold})
+	}
+	return j
+}
+
+// JSON writes the report as indented JSON with stable field names.
+func JSON(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) error {
+	rep := JSONReport{Version: m.version(), Warnings: []string{}, Recommendations: []JSONRecommendation{}}
+	if m.Facts != nil {
+		rep.Kernel = m.Facts.Kernel.Release
+		rep.Warnings = append(rep.Warnings, m.Facts.Warnings...)
+	}
+	for _, r := range recs {
+		if all || Shown(r) {
+			rep.Recommendations = append(rep.Recommendations, ToJSONWith(r, m.Cites))
+		}
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(rep)
+}
