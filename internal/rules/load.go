@@ -13,6 +13,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// maxRuleFile is the largest rule or sources file Load reads.
+const maxRuleFile = 1 << 20
+
 // rootAreas are the top-level directories that hold rule packs.
 var rootAreas = []string{"kernel", "ai", "apps", "antipatterns"}
 
@@ -39,6 +42,14 @@ func Load(fsys fs.FS) ([]Rule, Ecosystem, []Source, error) {
 				return err
 			}
 			if d.IsDir() || path.Ext(p) != ".yaml" {
+				return nil
+			}
+			// A --rules-dir is untrusted input: only regular files up to
+			// maxRuleFile bytes (no symlinks, devices, FIFOs).
+			if !d.Type().IsRegular() {
+				return nil
+			}
+			if info, err := d.Info(); err != nil || info.Size() > maxRuleFile {
 				return nil
 			}
 			b, err := fs.ReadFile(fsys, p)

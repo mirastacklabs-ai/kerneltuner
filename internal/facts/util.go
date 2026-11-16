@@ -1,16 +1,62 @@
 package facts
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
+
+// Caps on /proc reads: per-file bytes, process count, CPU-list range size.
+const (
+	procFileLimit = 64 << 10
+	maxProcs      = 65536
+	maxCPURange   = 65536
+)
+
+// unitNameRe is the accepted shape of a systemd service unit name.
+var unitNameRe = regexp.MustCompile(`^[A-Za-z0-9:_.\\@-]+\.service$`)
+
+// ValidUnitName reports whether s is a safe systemd service unit name: the
+// allowed character set only, not starting with "." or "-", no "..".
+func ValidUnitName(s string) bool {
+	return unitNameRe.MatchString(s) && s[0] != '.' && s[0] != '-' && !strings.Contains(s, "..")
+}
+
+// SafeText makes untrusted text safe to print on a terminal: C0 and C1
+// control characters (ESC, CR, LF, TAB, DEL, ...) and invalid UTF-8 are
+// replaced by U+FFFD.
+func SafeText(s string) string {
+	bad := func(r rune) bool { return r < 0x20 || (r >= 0x7f && r <= 0x9f) || r == utf8.RuneError }
+	if strings.IndexFunc(s, bad) < 0 {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if bad(r) {
+			return '�'
+		}
+		return r
+	}, s)
+}
+
+// ReadBounded reads at most limit bytes of path. /proc files are tiny, so a
+// larger one is hostile or broken and is truncated.
+func ReadBounded(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(io.LimitReader(f, limit))
+}
 
 // readStr returns the whitespace-trimmed contents of path.
 func readStr(path string) (string, error) {
-	b, err := os.ReadFile(path)
+	b, err := ReadBounded(path, procFileLimit)
 	if err != nil {
 		return "", err
 	}
@@ -102,6 +148,9 @@ func parseCPUList(s string) []int {
 			if b, err = strconv.Atoi(hi); err != nil {
 				continue
 			}
+		}
+		if a < 0 || b < a || b-a >= maxCPURange {
+			continue // negative, reversed or absurdly large range
 		}
 		for i := a; i <= b; i++ {
 			out = append(out, i)

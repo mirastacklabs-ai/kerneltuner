@@ -32,6 +32,23 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+# Keyless cosign signature of checksums.txt (OIDC). Produces checksums.txt.sig
+# and checksums.txt.pem; scripts/install.sh verifies them when cosign is
+# installed. The release job needs `id-token: write` and cosign on PATH.
+signs:
+  - id: checksums
+    cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - --yes
+      - --output-signature=${signature}
+      - --output-certificate=${certificate}
+      - ${artifact}
+    artifacts: checksum
+    output: true
+
 sboms:
   - id: archive-sboms
     artifacts: archive
@@ -58,6 +75,7 @@ nfpms:
           mode: 0644
     scripts:
       postinstall: scripts/postinstall.sh
+      preremove: scripts/preremove.sh
       postremove: scripts/postremove.sh
 
 changelog:

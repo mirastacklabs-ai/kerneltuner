@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 )
 
 // textWidth is the width the text report wraps its prose and references to.
@@ -23,11 +24,43 @@ type view struct {
 	fn       *footnotes
 }
 
+// CleanText replaces control characters (C0, DEL, C1: terminal escapes) in
+// text bound for a terminal, keeping line breaks.
+func CleanText(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = facts.SafeText(l)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// mdEscape backslash-escapes the characters that start Markdown markup, for
+// untrusted text outside a code span.
+func mdEscape(s string) string {
+	s = facts.SafeText(s)
+	var b strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune("\\`*_[]<>|~&#", r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// cleanRec strips control characters from the fields printed in reports.
+func cleanRec(r advisor.Recommendation) advisor.Recommendation {
+	for _, p := range []*string{&r.RuleID, &r.Param, &r.Target, &r.Title, &r.Current, &r.Proposed, &r.Risk, &r.ManagedBy} {
+		*p = facts.SafeText(*p)
+	}
+	return r
+}
+
 func newView(recs []advisor.Recommendation, m Meta, all bool) *view {
 	v := &view{fn: newFootnotes()}
 	for _, r := range recs {
 		if all || Shown(r) {
-			v.shown = append(v.shown, r)
+			v.shown = append(v.shown, cleanRec(r))
 		}
 	}
 	sort.SliceStable(v.shown, func(i, j int) bool {
@@ -108,7 +141,7 @@ func Text(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) error {
 			fmt.Fprintf(&b, "warning: %s\n", wmsg)
 		}
 	}
-	_, err := io.WriteString(w, b.String())
+	_, err := io.WriteString(w, CleanText(b.String()))
 	return err
 }
 
@@ -163,7 +196,7 @@ func mdCode(s string) string {
 	if s == "" {
 		return ""
 	}
-	return "`" + strings.ReplaceAll(mdCell(s), "`", "'") + "`"
+	return "`" + strings.ReplaceAll(mdCell(facts.SafeText(s)), "`", "'") + "`"
 }
 
 // Markdown writes a shareable Markdown report: host summary, a conflicts
@@ -177,7 +210,7 @@ func Markdown(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) erro
 	b.WriteString("## Host\n\n")
 	if m.Facts != nil {
 		for _, p := range summaryParts(m)[1:] { // [0] is the tool version, shown above
-			fmt.Fprintf(&b, "- %s\n", p)
+			fmt.Fprintf(&b, "- %s\n", mdEscape(p))
 		}
 	}
 	b.WriteString("\n")
@@ -225,10 +258,10 @@ func Markdown(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) erro
 	if m.Facts != nil && len(m.Facts.Warnings) > 0 {
 		b.WriteString("## Warnings\n\n")
 		for _, wmsg := range m.Facts.Warnings {
-			fmt.Fprintf(&b, "- %s\n", mdCell(wmsg))
+			fmt.Fprintf(&b, "- %s\n", mdEscape(mdCell(wmsg)))
 		}
 	}
-	_, err := io.WriteString(w, strings.TrimRight(b.String(), "\n")+"\n")
+	_, err := io.WriteString(w, CleanText(strings.TrimRight(b.String(), "\n")+"\n"))
 	return err
 }
 

@@ -19,7 +19,12 @@ func writeFix(t *testing.T, base, name, body string) {
 }
 
 func TestLoadMinimal(t *testing.T) {
-	root, values, rates := Load(t, "minimal")
+	dir, _ := filepath.Abs("../../testdata/fixtures")
+	t.Setenv(EnvDir, dir)
+	root, values, rates, err := Materialize(t.TempDir(), "minimal")
+	if err != nil {
+		t.Fatal(err)
+	}
 	b, err := os.ReadFile(filepath.Join(root.Proc, "sys/kernel/osrelease"))
 	if err != nil || !strings.HasPrefix(string(b), "6.8") {
 		t.Fatalf("osrelease = %q, %v", b, err)

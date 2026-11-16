@@ -12,6 +12,7 @@ import (
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/apply"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 )
 
 // geteuid is a variable so tests can simulate non-root.
@@ -27,6 +28,9 @@ func newApplyCmd(g *globalOpts) *cobra.Command {
 			dry, _ := cmd.Flags().GetBool("dry-run")
 			yes, _ := cmd.Flags().GetBool("yes")
 			// Guards run before anything reads or writes the system.
+			if fx, _ := cmd.Flags().GetString("fixture"); fx != "" && !dry {
+				return errors.New("--fixture is a development flag: it can only be combined with --dry-run")
+			}
 			if !dry {
 				if err := requireRoot(g); err != nil {
 					return err
@@ -118,7 +122,7 @@ func report(out io.Writer, res *apply.Result, dry bool) error {
 	}
 	_, _ = fmt.Fprintf(out, "applied and verified %d change(s)\nsnapshot: %s\n", len(res.Ops), res.Snapshot)
 	for _, h := range res.Hints {
-		_, _ = fmt.Fprintln(out, h)
+		_, _ = fmt.Fprintln(out, facts.SafeText(h))
 	}
 	_, _ = fmt.Fprintf(out, "undo with: kerneltuner rollback %s\n", res.ID)
 	return nil
@@ -132,6 +136,7 @@ func printPlan(out io.Writer, plan *apply.Plan) {
 		if op.Target != "" {
 			name += " [" + op.Target + "]"
 		}
+		name = facts.SafeText(name)
 		w := op.LivePath
 		if op.File != "" {
 			if w != "" {
@@ -139,13 +144,16 @@ func printPlan(out io.Writer, plan *apply.Plan) {
 			}
 			w += op.File
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", op.RuleID, op.Kind, name, op.Proposed, w)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", facts.SafeText(op.RuleID), facts.SafeText(op.Kind), name, facts.SafeText(op.Proposed), facts.SafeText(w))
 	}
 	_ = tw.Flush()
 	for _, s := range plan.Skipped {
-		_, _ = fmt.Fprintf(out, "skipped %s: %s\n", s.RuleID, s.Reason)
+		_, _ = fmt.Fprintf(out, "skipped %s: %s\n", facts.SafeText(s.RuleID), facts.SafeText(s.Reason))
 	}
 	for _, w := range plan.Warnings {
-		_, _ = fmt.Fprintf(out, "warning: merged duplicates: %s\n", w)
+		_, _ = fmt.Fprintf(out, "warning: merged duplicates: %s\n", facts.SafeText(w))
+	}
+	for _, b := range plan.Blocked {
+		_, _ = fmt.Fprintf(out, "CONFLICT (apply refuses unless --rule selects one rule): %s\n", facts.SafeText(b))
 	}
 }

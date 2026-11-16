@@ -7,8 +7,24 @@ import (
 	"strconv"
 	"strings"
 
+	"regexp"
+
 	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 )
+
+// ifNameRe is what a network interface name may look like (IFNAMSIZ-1).
+var ifNameRe = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,15}$`)
+
+var shellSafeRe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
+
+// shq quotes s for a POSIX shell; plain words are left as they are.
+func shq(s string) string {
+	if shellSafeRe.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
 
 // Generated file names (paths relative to --out).
 const (
@@ -82,6 +98,9 @@ func pick(recs []advisor.Recommendation, kinds ...string) []advisor.Recommendati
 		if r.Status != advisor.StatusRecommend {
 			continue
 		}
+		// Values may derive from host data: no control characters in any file.
+		r.Param, r.Target, r.Proposed = facts.SafeText(r.Param), facts.SafeText(r.Target), facts.SafeText(r.Proposed)
+		r.RuleID, r.Title = facts.SafeText(r.RuleID), facts.SafeText(r.Title)
 		for _, k := range kinds {
 			if r.Kind == k {
 				out = append(out, r)
@@ -144,7 +163,7 @@ func Sysctl(recs []advisor.Recommendation, m Meta) string {
 	b.WriteString("# Install as /etc/sysctl.d/90-kerneltuner.conf, then: sysctl --system\n")
 	for _, r := range rs {
 		b.WriteString("\n" + comment(r, m))
-		fmt.Fprintf(&b, "%s = %s\n", r.Param, r.Proposed)
+		fmt.Fprintf(&b, "%s = %s\n", facts.SafeText(r.Param), facts.SafeText(r.Proposed))
 	}
 	return b.String()
 }
@@ -166,16 +185,16 @@ func Limits(recs []advisor.Recommendation, m Meta) (dropins map[string]string, l
 	units := map[string]*strings.Builder{}
 	var fb strings.Builder
 	for _, r := range rs {
-		if isUnit(r.Target) {
+		if isUnit(r.Target) && facts.ValidUnitName(r.Target) {
 			b := units[r.Target]
 			if b == nil {
 				b = &strings.Builder{}
 				b.WriteString(m.header("# "))
-				b.WriteString("# Then: systemctl daemon-reload && systemctl restart " + r.Target + "\n\n[Service]\n")
+				b.WriteString("# Then: systemctl daemon-reload && systemctl restart " + shq(r.Target) + "\n\n[Service]\n")
 				units[r.Target] = b
 			}
 			b.WriteString(comment(r, m))
-			fmt.Fprintf(b, "%s=%s\n", r.Param, r.Proposed)
+			fmt.Fprintf(b, "%s=%s\n", facts.SafeText(r.Param), facts.SafeText(r.Proposed))
 			continue
 		}
 		if fb.Len() == 0 {
@@ -187,7 +206,7 @@ func Limits(recs []advisor.Recommendation, m Meta) (dropins map[string]string, l
 		if len(r.Contributors) > 1 {
 			ids = strings.Join(r.Contributors, ", ")
 		}
-		fmt.Fprintf(&fb, "\n# %s (%s): %s\n", ids, r.Target, r.Title)
+		fmt.Fprintf(&fb, "\n# %s (%s): %s\n", facts.SafeText(ids), facts.SafeText(r.Target), facts.SafeText(r.Title))
 		fb.WriteString(sourceComments(r, m, "# "))
 		item, val := limitsConfLine(r)
 		fmt.Fprintf(&fb, "*\tsoft\t%s\t%s\n*\thard\t%s\t%s\n", item, val, item, val)
@@ -298,7 +317,12 @@ func NIC(recs []advisor.Recommendation, m Meta) string {
 	type cmds struct{ rx, tx, combined string }
 	by := map[string]*cmds{}
 	var order []string
+	var skipped []string
 	for _, r := range rs {
+		if !ifNameRe.MatchString(r.Target) {
+			skipped = append(skipped, "# skipped interface "+strconv.QuoteToASCII(r.Target)+": not a valid interface name\n")
+			continue
+		}
 		c := by[r.Target]
 		if c == nil {
 			c = &cmds{}
@@ -322,23 +346,28 @@ func NIC(recs []advisor.Recommendation, m Meta) string {
 	b.WriteString("# .link file ([Link] RxBufferSize=, TxBufferSize=, CombinedChannels=), NetworkManager\n")
 	b.WriteString("# (ethtool.ring-rx, ethtool.channels-combined) or a udev rule.\n\n")
 	for _, r := range rs {
-		b.WriteString(comment(r, m))
+		if ifNameRe.MatchString(r.Target) {
+			b.WriteString(comment(r, m))
+		}
+	}
+	for _, sk := range dedupeStrings(skipped) {
+		b.WriteString(sk)
 	}
 	b.WriteString("\n")
 	for _, n := range order {
 		c := by[n]
 		if c.rx != "" || c.tx != "" {
-			line := "ethtool -G " + n
+			line := "ethtool -G " + shq(n)
 			if c.rx != "" {
-				line += " rx " + c.rx
+				line += " rx " + shq(c.rx)
 			}
 			if c.tx != "" {
-				line += " tx " + c.tx
+				line += " tx " + shq(c.tx)
 			}
 			b.WriteString(line + "\n")
 		}
 		if c.combined != "" {
-			fmt.Fprintf(&b, "ethtool -L %s combined %s\n", n, c.combined)
+			fmt.Fprintf(&b, "ethtool -L %s combined %s\n", shq(n), shq(c.combined))
 		}
 	}
 	return b.String()
@@ -398,4 +427,16 @@ func Runtime(recs []advisor.Recommendation, m Meta) string {
 		}
 	}
 	return b.String()
+}
+
+func dedupeStrings(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }

@@ -4,7 +4,8 @@ N=generate-roundtrip
 G=$WORK/gen
 # Outputs are produced and validated in disposable containers; nothing lands on the host.
 # Generate into a volume-less tmp inside one container chain via stdout tar.
-docker run --rm -v "$BIN_VOL":/kt:ro -v "$REPO":/src:ro -w /src "$ALPINE" sh -c '
+# --fixture refuses root, and fixtures are found through KERNELTUNER_FIXTURES.
+docker run --rm --user 1000:1000 -e KERNELTUNER_FIXTURES=/src/testdata/fixtures -v "$BIN_VOL":/kt:ro -v "$REPO":/src:ro -w /src "$ALPINE" sh -c '
   /kt/kerneltuner generate --fixture web-16c-64g-nginx --format all --out /tmp/out >/dev/null &&
   /kt/kerneltuner generate --fixture cassandra-stock --format all --out /tmp/out2 >/dev/null &&
   tar -C /tmp -cf - out out2' > "$WORK/gen.tar" 2>"$WORK/gen.err" || { fail $N "generate failed: $(head -c 200 "$WORK/gen.err")"; exit 1; }

@@ -56,14 +56,35 @@ fi
 
 fetch "$BASE/checksums.txt" "$WORK/checksums.txt" || die "download failed: $BASE/checksums.txt"
 
+# checksums.txt is signed keylessly (cosign, OIDC). Verify the signature when
+# cosign is available; otherwise say so.
+if command -v cosign >/dev/null 2>&1; then
+    fetch "$BASE/checksums.txt.sig" "$WORK/checksums.txt.sig" || die "download failed: $BASE/checksums.txt.sig"
+    fetch "$BASE/checksums.txt.pem" "$WORK/checksums.txt.pem" || die "download failed: $BASE/checksums.txt.pem"
+    cosign verify-blob \
+        --certificate "$WORK/checksums.txt.pem" \
+        --signature "$WORK/checksums.txt.sig" \
+        --certificate-identity-regexp "^https://github[.]com/$REPO/[.]github/workflows/release[.]yml@refs/tags/v.+" \
+        --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+        "$WORK/checksums.txt" >/dev/null 2>&1 || die "cosign signature verification of checksums.txt failed"
+    info "cosign signature verified"
+else
+    info "note: cosign not found; the checksums.txt signature was not verified (install cosign to verify releases)"
+fi
+
 # Archive names embed the version, so look the name up in checksums.txt.
-ARCHIVE="$(grep "_linux_${ARCH}\.tar\.gz\$" "$WORK/checksums.txt" | awk '{print $2}' | head -n 1)"
+ARCHIVE="$(grep -F "_linux_${ARCH}.tar.gz" "$WORK/checksums.txt" | awk '{print $2}' | grep -E '\.tar\.gz$' | head -n 1)"
 [ -n "$ARCHIVE" ] || die "no linux/$ARCH archive listed in checksums.txt ($VERSION)"
+# The name comes from a downloaded file: allow plain file names only.
+case "$ARCHIVE" in
+    *[!A-Za-z0-9._-]* | .*) die "unexpected archive name in checksums.txt: $ARCHIVE" ;;
+esac
 
 info "Downloading $ARCHIVE ($VERSION, linux/$ARCH)"
 fetch "$BASE/$ARCHIVE" "$WORK/$ARCHIVE" || die "download failed: $BASE/$ARCHIVE"
 
-WANT="$(grep "  $ARCHIVE\$" "$WORK/checksums.txt" | cut -d' ' -f1 | head -n 1)"
+WANT="$(grep -F "$ARCHIVE" "$WORK/checksums.txt" | awk -v a="$ARCHIVE" '$2 == a {print $1; exit}')"
+[ -n "$WANT" ] || die "no checksum for $ARCHIVE in checksums.txt"
 GOT="$(sha256 "$WORK/$ARCHIVE")"
 [ "$WANT" = "$GOT" ] || die "sha256 mismatch for $ARCHIVE (expected $WANT, got $GOT)"
 info "sha256 verified"

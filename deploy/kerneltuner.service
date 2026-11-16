@@ -11,28 +11,44 @@ RestartSec=5s
 SyslogIdentifier=kerneltuner
 
 # The agent only reads /proc and /sys and writes its state file under
-# /run/kerneltuner. Everything else is locked down.
+# /run/kerneltuner. It runs as a transient unprivileged user and everything
+# else is locked down.
+DynamicUser=yes
 RuntimeDirectory=kerneltuner
+RuntimeDirectoryMode=0755
 ProtectSystem=strict
-ReadWritePaths=/run/kerneltuner
 ProtectHome=yes
 PrivateTmp=yes
+PrivateDevices=yes
 NoNewPrivileges=yes
+UMask=0022
 # Reads of /proc/sys and /sys keep working; only writes are blocked.
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
+ProtectKernelLogs=yes
 ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
 RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
 
-# CAP_DAC_READ_SEARCH: read /proc/<pid>/fd and other files owned by other
-#   users (socket-to-process mapping, per-process limits).
-# CAP_SYS_PTRACE: required by the kernel to readlink /proc/<pid>/fd and read
-#   /proc/<pid>/limits of processes the agent does not own.
-# CAP_NET_ADMIN: read NIC ring and channel sizes through the ethtool ioctl.
-CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_NET_ADMIN
-AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_NET_ADMIN
+# CAP_DAC_READ_SEARCH: read files other users own (per-process limits and
+#   cgroup, oom_score_adj) that the unprivileged user could not open.
+# CAP_SYS_PTRACE: the kernel's ptrace access check gates /proc/<pid>/fd (the
+#   open-fd count and the socket-to-port mapping) for other users' processes.
+#   The capability is what is needed: the ptrace(2) system call itself is not
+#   used. /proc/<pid>/limits is mode 0444 and does not need it.
+# No CAP_NET_ADMIN: the ETHTOOL_GRINGPARAM / ETHTOOL_GCHANNELS ioctls that read
+#   NIC ring and channel sizes are unprivileged.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
 
 [Install]
 WantedBy=multi-user.target

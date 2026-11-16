@@ -16,6 +16,13 @@ var SysctlDirs = []string{
 	"fs/inotify", "net/bridge",
 }
 
+// SysctlSkip names /proc/sys entries that are never read: they hold secrets
+// or trigger work when read.
+var SysctlSkip = map[string]bool{
+	"hostname": true, "domainname": true, "tcp_fastopen_key": true, "stat_refresh": true,
+	"boot_id": true, "uuid": true,
+}
+
 func collectSysctl(r Root, f *Facts) {
 	base := filepath.Join(r.Proc, "sys")
 	if _, err := os.Stat(base); err != nil {
@@ -29,7 +36,7 @@ func collectSysctl(r Root, f *Facts) {
 		}
 		prefix := strings.ReplaceAll(d, "/", ".") + "."
 		for _, e := range ents {
-			if !e.Type().IsRegular() {
+			if !e.Type().IsRegular() || SysctlSkip[e.Name()] {
 				continue
 			}
 			// Write-only entries (mode 0200) are skipped: root could open
@@ -37,7 +44,7 @@ func collectSysctl(r Root, f *Facts) {
 			if info, err := e.Info(); err != nil || info.Mode().Perm()&0o444 == 0 {
 				continue
 			}
-			b, err := os.ReadFile(filepath.Join(base, d, e.Name()))
+			b, err := ReadBounded(filepath.Join(base, d, e.Name()), procFileLimit)
 			if err != nil {
 				continue
 			}
@@ -80,16 +87,23 @@ func collectProcs(r Root, f *Facts) {
 		if pid < 0 || !e.IsDir() {
 			continue
 		}
+		if len(f.Procs) >= maxProcs {
+			f.warnf("more than %d processes: ignoring the rest", maxProcs)
+			break
+		}
 		dir := filepath.Join(r.Proc, e.Name())
 		comm, err := readStr(filepath.Join(dir, "comm"))
 		if err != nil {
 			continue // process exited while scanning
 		}
-		p := Proc{PID: pid, Comm: comm}
-		if b, err := os.ReadFile(filepath.Join(dir, "cmdline")); err == nil {
+		p := Proc{PID: pid, Comm: SafeText(comm)}
+		if b, err := ReadBounded(filepath.Join(dir, "cmdline"), procFileLimit); err == nil {
 			p.Cmdline = splitNUL(b)
+			for i := range p.Cmdline {
+				p.Cmdline[i] = SafeText(p.Cmdline[i])
+			}
 		}
-		if b, err := os.ReadFile(filepath.Join(dir, "limits")); err == nil {
+		if b, err := ReadBounded(filepath.Join(dir, "limits"), procFileLimit); err == nil {
 			p.NoFileSoft, p.NoFileHard = parseLimit(string(b), "Max open files")
 			p.MemlockSoft, p.MemlockHard = parseLimit(string(b), "Max locked memory")
 			p.NProcSoft, p.NProcHard = parseLimit(string(b), "Max processes")
@@ -97,7 +111,7 @@ func collectProcs(r Root, f *Facts) {
 		}
 		p.OOMScoreAdj = atoi(readOpt(filepath.Join(dir, "oom_score_adj")))
 		p.OpenFDs = countFDs(filepath.Join(dir, "fd"))
-		if b, err := os.ReadFile(filepath.Join(dir, "cgroup")); err == nil {
+		if b, err := ReadBounded(filepath.Join(dir, "cgroup"), procFileLimit); err == nil {
 			p.Unit = unitFromCgroup(string(b))
 			p.Container = containerFromCgroup(string(b))
 		}
@@ -151,19 +165,34 @@ func countFDs(dir string) int {
 	return len(ents)
 }
 
-// unitFromCgroup returns the last path element ending in ".service" from the
-// first cgroup line that has one.
+// unitFromCgroup returns the systemd service unit a process belongs to.
+// The cgroup path is attacker-influenced (user@*.service subtrees are
+// delegated to users), so a unit is only accepted when the path runs
+// system.slice[/<name>.slice]*/<name>.service, the name passes
+// ValidUnitName, and nothing under user.slice or user@*.service counts.
 func unitFromCgroup(cg string) string {
 	for _, line := range strings.Split(cg, "\n") {
 		parts := strings.SplitN(line, ":", 3)
 		if len(parts) != 3 {
 			continue
 		}
-		els := strings.Split(parts[2], "/")
-		for i := len(els) - 1; i >= 0; i-- {
-			if strings.HasSuffix(els[i], ".service") {
-				return els[i]
+		var els []string
+		for _, e := range strings.Split(parts[2], "/") {
+			if e != "" {
+				els = append(els, e)
 			}
+		}
+		if len(els) < 2 || els[0] != "system.slice" {
+			continue
+		}
+		for _, el := range els[1:] {
+			if strings.HasSuffix(el, ".slice") && !strings.HasPrefix(el, "user") {
+				continue
+			}
+			if strings.HasSuffix(el, ".service") && !strings.HasPrefix(el, "user@") && ValidUnitName(el) {
+				return el
+			}
+			break // a scope, a plain subgroup, or a bad name: no unit
 		}
 	}
 	return ""

@@ -2,10 +2,16 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+// maxStateBytes caps what ReadState accepts: the file is written by the agent
+// but may sit in a directory other users can influence.
+const maxStateBytes = 4 << 20
 
 // RuleState is one tracked rule in the state file.
 type RuleState struct {
@@ -67,9 +73,17 @@ func WriteState(path string, sf *StateFile) error {
 
 // ReadState loads a state file.
 func ReadState(path string) (*StateFile, error) {
-	b, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, maxStateBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxStateBytes {
+		return nil, fmt.Errorf("state file %s is larger than %d bytes", path, maxStateBytes)
 	}
 	var sf StateFile
 	if err := json.Unmarshal(b, &sf); err != nil {

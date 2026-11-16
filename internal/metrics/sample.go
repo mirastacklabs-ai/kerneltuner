@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,7 +41,10 @@ func readLines(path string) []string {
 
 func num(s string) (float64, bool) {
 	f, err := strconv.ParseFloat(s, 64)
-	return f, err == nil
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, false
+	}
+	return f, true
 }
 
 // pairs parses /proc/net/{netstat,snmp}: a header line and a value line per

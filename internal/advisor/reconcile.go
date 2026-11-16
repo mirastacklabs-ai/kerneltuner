@@ -125,18 +125,17 @@ func Conflicts(recs []Recommendation) []Conflict {
 	// Settings that already conflict, by key, and ok rules per key.
 	idx := map[string]int{}
 	for i, c := range out {
-		idx[strings.ToUpper(c.Kind+"|"+c.Param)+"|"+c.Target] = i
+		idx[c.Kind+"|"+normParam(c.Kind, c.Param)+"|"+c.Target] = i
 	}
-	type okRule struct{ rule, val string }
+	type okRule struct{ rule, val, mode string }
 	oks := map[string][]okRule{}
 	for _, r := range recs {
-		if r.Status != StatusOK || !mergeKinds[r.Kind] || r.Param == "" || r.Proposed == "" || (r.Compare != "" && r.Compare != "eq") {
+		if r.Status != StatusOK || !mergeKinds[r.Kind] || r.Param == "" || r.Proposed == "" {
 			continue
 		}
-		k := r.Kind + "|" + strings.ToUpper(r.Param) + "|" + r.Target
-		oks[k] = append(oks[k], okRule{r.RuleID, r.Proposed})
+		k := r.Kind + "|" + normParam(r.Kind, r.Param) + "|" + r.Target
+		oks[k] = append(oks[k], okRule{r.RuleID, r.Proposed, r.Compare})
 	}
-	norm := func(v string) string { return strings.Join(strings.Fields(v), " ") }
 	for _, r := range merged {
 		k, ok := mergeKey(r)
 		if !ok || len(oks[k]) == 0 {
@@ -144,14 +143,14 @@ func Conflicts(recs []Recommendation) []Conflict {
 		}
 		var kept []string
 		for _, o := range oks[k] {
-			if norm(o.val) != norm(r.Proposed) {
+			if violates(r.Proposed, o.mode, o.val) {
 				kept = append(kept, o.rule+"="+o.val)
 			}
 		}
 		if len(kept) == 0 {
 			continue
 		}
-		if i, found := idx[strings.ToUpper(r.Kind+"|"+r.Param)+"|"+r.Target]; found {
+		if i, found := idx[r.Kind+"|"+normParam(r.Kind, r.Param)+"|"+r.Target]; found {
 			out[i].Kept = kept
 			continue
 		}
@@ -201,7 +200,19 @@ func mergeKey(r Recommendation) (string, bool) {
 	if (r.Status != StatusRecommend && r.Status != StatusFiring) || !mergeKinds[r.Kind] || r.Param == "" {
 		return "", false
 	}
-	return r.Kind + "|" + strings.ToUpper(r.Param) + "|" + r.Target, true
+	return r.Kind + "|" + normParam(r.Kind, r.Param) + "|" + r.Target, true
+}
+
+// normParam folds the spellings of one setting together: sysctl names may use
+// "." or "/" as separator, sysfs paths may carry a leading "/sys/".
+func normParam(kind, param string) string {
+	switch kind {
+	case "sysctl":
+		param = strings.ReplaceAll(param, "/", ".")
+	case "sysfs":
+		param = strings.TrimPrefix(strings.TrimPrefix(param, "/sys/"), "/")
+	}
+	return strings.ToUpper(param)
 }
 
 func distinctRules(recs []Recommendation, idx []int) int {
@@ -225,7 +236,6 @@ func mergeGroup(recs []Recommendation, idx []int) (*Recommendation, *Conflict) {
 	seenRule := map[string]bool{}
 	var ids, vals []string
 	allSame := true
-	modes := map[string]bool{}
 	var sources []string
 	seenSrc := map[string]bool{}
 	for _, i := range idx {
@@ -238,11 +248,6 @@ func mergeGroup(recs []Recommendation, idx []int) (*Recommendation, *Conflict) {
 		if strings.Join(strings.Fields(r.Proposed), " ") != strings.Join(strings.Fields(m.Proposed), " ") {
 			allSame = false
 		}
-		mode := r.Compare
-		if mode == "" {
-			mode = "eq"
-		}
-		modes[mode] = true
 		for _, s := range r.Sources {
 			if !seenSrc[s] {
 				seenSrc[s] = true
@@ -275,15 +280,8 @@ func mergeGroup(recs []Recommendation, idx []int) (*Recommendation, *Conflict) {
 	}
 
 	c := &Conflict{Kind: m.Kind, Param: m.Param, Target: m.Target, Rules: sortedIDs, Values: sortedVals}
-	switch {
-	case len(modes) == 1 && modes["gte"]:
-		if v, ok := pickNumeric(sortedVals, true); ok {
-			c.Chosen, c.Method, c.Resolved = v, "max", true
-		}
-	case len(modes) == 1 && modes["lte"]:
-		if v, ok := pickNumeric(sortedVals, false); ok {
-			c.Chosen, c.Method, c.Resolved = v, "min", true
-		}
+	if v, method, ok := solveBounds(recs, idx); ok {
+		c.Chosen, c.Method, c.Resolved = v, method, true
 	}
 	if !c.Resolved {
 		c.Chosen, c.Method, c.Winner = m.Proposed, "highest-scored", m.RuleID
@@ -294,38 +292,6 @@ func mergeGroup(recs []Recommendation, idx []int) (*Recommendation, *Conflict) {
 		m.Note = "CONFLICT " + m.Note
 	}
 	return &m, c
-}
-
-// pickNumeric picks the per-field max (or min) of whitespace-separated
-// numeric values, keeping the original token text so integers stay exact.
-// "infinity" and "unlimited" rank above every number.
-func pickNumeric(vals []string, wantMax bool) (string, bool) {
-	var rows [][]string
-	for _, v := range vals {
-		f := strings.Fields(v)
-		if len(f) == 0 || (len(rows) > 0 && len(f) != len(rows[0])) {
-			return "", false
-		}
-		rows = append(rows, f)
-	}
-	out := make([]string, len(rows[0]))
-	for col := range out {
-		best := rows[0][col]
-		for _, row := range rows[1:] {
-			c, ok := cmpToken(row[col], best)
-			if !ok {
-				return "", false
-			}
-			if (wantMax && c > 0) || (!wantMax && c < 0) {
-				best = row[col]
-			}
-		}
-		if _, ok := cmpToken(best, best); !ok {
-			return "", false
-		}
-		out[col] = best
-	}
-	return strings.Join(out, " "), true
 }
 
 func isInf(s string) bool {
@@ -378,4 +344,123 @@ func numVal(s string) (float64, bool) {
 		return 0, false
 	}
 	return f, true
+}
+
+// violates reports whether applying chosen would break a satisfied rule that
+// wants val under mode (eq/set exact, gte floor, lte ceiling, per field).
+// Values that cannot be compared numerically only count under eq.
+func violates(chosen, mode, val string) bool {
+	switch mode {
+	case "gte", "lte":
+		cf, vf := strings.Fields(chosen), strings.Fields(val)
+		if len(cf) != len(vf) {
+			return false
+		}
+		for i := range cf {
+			c, ok := cmpToken(cf[i], vf[i])
+			if !ok {
+				return false
+			}
+			if (mode == "gte" && c < 0) || (mode == "lte" && c > 0) {
+				return true
+			}
+		}
+		return false
+	default:
+		return strings.Join(strings.Fields(chosen), " ") != strings.Join(strings.Fields(val), " ")
+	}
+}
+
+// solveBounds finds a value that satisfies every rule in the group: at least
+// the largest gte floor and at most the smallest lte ceiling (per
+// whitespace-separated field). It picks the floor when one exists, else the
+// ceiling. ok is false when the rules are incompatible, the values are not
+// comparable, or an eq/set rule disagrees: a genuine conflict.
+func solveBounds(recs []Recommendation, idx []int) (chosen, method string, ok bool) {
+	type row struct {
+		mode string
+		f    []string
+	}
+	var rows []row
+	modes := map[string]bool{}
+	for _, i := range idx {
+		f := strings.Fields(recs[i].Proposed)
+		if len(f) == 0 || (len(rows) > 0 && len(f) != len(rows[0].f)) {
+			return "", "", false
+		}
+		m := recs[i].Compare
+		if m == "" || m == "set" {
+			m = "eq"
+		}
+		modes[m] = true
+		rows = append(rows, row{m, f})
+	}
+	if modes["eq"] {
+		return "", "", false // eq/set against anything else is a genuine conflict (DESIGN.md)
+	}
+	out := make([]string, len(rows[0].f))
+	for col := range out {
+		lo, hi, eq := "", "", ""
+		for _, r := range rows {
+			t := r.f[col]
+			switch r.mode {
+			case "gte":
+				if lo == "" {
+					lo = t
+				} else if c, ok := cmpToken(t, lo); !ok {
+					return "", "", false
+				} else if c > 0 {
+					lo = t
+				}
+			case "lte":
+				if hi == "" {
+					hi = t
+				} else if c, ok := cmpToken(t, hi); !ok {
+					return "", "", false
+				} else if c < 0 {
+					hi = t
+				}
+			default:
+				if eq != "" && eq != t {
+					if c, ok := cmpToken(eq, t); !ok || c != 0 {
+						return "", "", false
+					}
+				}
+				if eq == "" {
+					eq = t
+				}
+			}
+		}
+		pick := eq
+		if pick == "" {
+			pick = lo
+		}
+		if pick == "" {
+			pick = hi
+		}
+		for _, bound := range []struct {
+			v   string
+			dir int
+		}{{lo, 1}, {hi, -1}} {
+			if bound.v == "" || bound.v == pick {
+				continue
+			}
+			c, ok := cmpToken(pick, bound.v)
+			if !ok || c*bound.dir < 0 {
+				return "", "", false
+			}
+		}
+		out[col] = pick
+	}
+	switch {
+	case len(modes) == 1 && modes["gte"]:
+		method = "max"
+	case len(modes) == 1 && modes["lte"]:
+		method = "min"
+	case len(modes) == 1:
+		return "", "", false // eq/eq with different values: genuine
+	default:
+		method = "bounds"
+	}
+	return strings.Join(out, " "), method, true
 }

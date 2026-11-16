@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -22,9 +24,10 @@ import (
 )
 
 const (
-	maxCaptureFile = 1 << 20 // bytes read per file
-	maxSysctlFile  = 4096
-	maxFDEntries   = 256 // fd/ placeholders per process (the collector only counts entries)
+	maxCaptureFile  = 1 << 20 // bytes read per file
+	maxSysctlFile   = 4096
+	maxFDEntries    = 256
+	maxCaptureProcs = 65536 // fd/ placeholders per process (the collector only counts entries)
 )
 
 func newCaptureCmd(g *globalOpts) *cobra.Command {
@@ -35,9 +38,28 @@ func newCaptureCmd(g *globalOpts) *cobra.Command {
 docs/DESIGN.md) and writes them as a tar.gz archive, or with --fixture as a
 fixture.yaml (synthetic: false) that can be dropped into testdata/fixtures.
 
-Privacy: only the process name plus argv[0..1] is kept from each command line
-(secrets and host names redacted); environ, fd targets, host names, serials and
-MAC/IP addresses are never read.`,
+Privacy, exactly what is redacted:
+  - Process command lines: only the program name plus argv[1] is kept. Any
+    argv[0] process title containing ": " (sshd-session: alice [priv],
+    postgres: alice db ...) is reduced to "<program>: [redacted]". argv[1] is
+    dropped to [redacted] when it looks like a token (20+ characters mixing
+    letters, digits and symbols, or a prefix such as ghp_, xox, eyJ).
+  - Arguments and the kernel command line: key=value pairs whose key contains
+    pass, secret, token, key, auth, cred, pwd or luks (also -p<password>),
+    ip=a:b:..., BOOTIF= and ifname= values, e-mail addresses, UUIDs, IPv4 and
+    IPv6 addresses (loopback and wildcard kept), MAC addresses and host names
+    under well-known TLDs are replaced by placeholders.
+  - /home/<user>, /Users/<user> and /media/<user> become /home/[user] etc.;
+    container IDs become [id]. The local host name (from proc/sys/kernel/hostname)
+    is replaced wherever it appears as a whole word.
+  - Only the container= entry of pid 1's environment is kept; mounts lose
+    remote devices, credentials and overlay paths; listening sockets lose
+    their local addresses; chassis_asset_tag is kept only when it is a known
+    cloud value.
+  - Never read: environ (other than container=), fd targets, serials, UUIDs,
+    MAC addresses, shadow files.
+Output files are created with mode 0600 and never overwrite an existing file
+unless --force is given.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out, _ := cmd.Flags().GetString("output")
@@ -45,8 +67,9 @@ MAC/IP addresses are never read.`,
 			if out == "" && !asFixture {
 				return errors.New("capture: -o FILE is required (use -o - for stdout)")
 			}
+			force, _ := cmd.Flags().GetBool("force")
 			snap := captureRoot(g.Root())
-			w, closeFn, err := openOutput(cmd, out)
+			w, closeFn, err := openOutput(cmd, out, force)
 			if err != nil {
 				return err
 			}
@@ -63,18 +86,45 @@ MAC/IP addresses are never read.`,
 	}
 	cmd.Flags().StringP("output", "o", "", "output file (- or empty with --fixture: stdout)")
 	cmd.Flags().Bool("fixture", false, "emit a fixture.yaml instead of an archive")
+	cmd.Flags().Bool("force", false, "overwrite an existing output file")
 	return cmd
 }
 
-func openOutput(cmd *cobra.Command, out string) (io.Writer, func() error, error) {
+// openOutput opens the capture destination. Files are created exclusively
+// (O_EXCL, O_NOFOLLOW, mode 0600) so an existing file or a planted symlink is
+// never written through. With force, an existing regular file is replaced via
+// a temp file in the same directory plus rename.
+func openOutput(cmd *cobra.Command, out string, force bool) (io.Writer, func() error, error) {
 	if out == "" || out == "-" || out == "/dev/stdout" {
 		return cmd.OutOrStdout(), func() error { return nil }, nil
 	}
-	f, err := os.Create(out)
+	flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL | syscall.O_NOFOLLOW
+	f, err := os.OpenFile(out, flags, 0o600)
+	if err == nil {
+		return f, f.Close, nil
+	}
+	if !errors.Is(err, fs.ErrExist) {
+		return nil, nil, err
+	}
+	if !force {
+		return nil, nil, fmt.Errorf("%s exists: refusing to overwrite (use --force)", facts.SafeText(out))
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(out), ".kerneltuner-capture-*")
 	if err != nil {
 		return nil, nil, err
 	}
-	return f, f.Close, nil
+	done := func() error {
+		if err := tmp.Close(); err != nil {
+			_ = os.Remove(tmp.Name())
+			return err
+		}
+		if err := os.Rename(tmp.Name(), out); err != nil { // replaces a symlink, never follows it
+			_ = os.Remove(tmp.Name())
+			return err
+		}
+		return nil
+	}
+	return tmp, done, nil
 }
 
 // snapshot is the sanitized allowlisted view of a root: fixture-relative path
@@ -107,6 +157,8 @@ func captureRoot(r facts.Root) *snapshot {
 	return c.snap
 }
 
+// initHosts reads the host name from the captured root only (never from the
+// machine capture runs on) and matches it on word boundaries.
 func (c *capturer) initHosts() {
 	seen := map[string]bool{}
 	add := func(h string) {
@@ -120,11 +172,8 @@ func (c *capturer) initHosts() {
 			}
 		}
 	}
-	if h, err := os.Hostname(); err == nil {
-		add(h)
-	}
-	if b, err := os.ReadFile(filepath.Join(c.r.Proc, "sys/kernel/hostname")); err == nil {
-		add(string(b))
+	if s, err := readLimited(filepath.Join(c.r.Proc, "sys/kernel/hostname"), 256); err == nil {
+		add(s)
 	}
 	if len(c.hosts) == 0 {
 		return
@@ -133,7 +182,7 @@ func (c *capturer) initHosts() {
 	for i, h := range c.hosts {
 		quoted[i] = regexp.QuoteMeta(h)
 	}
-	c.hostRE = regexp.MustCompile(`(?i)` + strings.Join(quoted, "|"))
+	c.hostRE = regexp.MustCompile(`(?i)\b(?:` + strings.Join(quoted, "|") + `)\b`)
 }
 
 func (c *capturer) scrub(s string) string {
@@ -204,9 +253,10 @@ func (c *capturer) marker(key string) { c.snap.Files[key] = "" }
 func (c *capturer) proc() {
 	p := c.r.Proc
 	for _, rel := range []string{"sys/kernel/osrelease", "meminfo", "modules", "sys/fs/file-nr", "vmstat",
-		"pressure/cpu", "pressure/memory", "pressure/io", "net/netstat", "net/snmp", "net/softnet_stat", "net/sockstat", "1/cgroup", "swaps"} {
+		"pressure/cpu", "pressure/memory", "pressure/io", "net/netstat", "net/snmp", "net/softnet_stat", "net/sockstat", "swaps"} {
 		c.file("proc", p, rel, nil)
 	}
+	c.file("proc", p, "1/cgroup", scrubCgroup)
 	c.file("proc", p, "cmdline", redactCmdlineText)
 	c.file("proc", p, "cpuinfo", trimCPUInfo)
 	c.mounts()
@@ -223,10 +273,6 @@ func (c *capturer) proc() {
 	}
 }
 
-var sysctlSkip = map[string]bool{
-	"hostname": true, "domainname": true, "tcp_fastopen_key": true, "stat_refresh": true,
-}
-
 func (c *capturer) sysctl() {
 	base := filepath.Join(c.r.Proc, "sys")
 	for _, d := range facts.SysctlDirs {
@@ -235,7 +281,7 @@ func (c *capturer) sysctl() {
 			continue
 		}
 		for _, e := range ents {
-			if !e.Type().IsRegular() || sysctlSkip[e.Name()] {
+			if !e.Type().IsRegular() || facts.SysctlSkip[e.Name()] {
 				continue
 			}
 			if info, err := e.Info(); err != nil || info.Mode().Perm()&0o444 == 0 {
@@ -251,25 +297,92 @@ func (c *capturer) sysctl() {
 }
 
 var (
-	reIPv4   = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	reUUID   = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
-	reEmail  = regexp.MustCompile(`\S+@\S+`)
-	reFQDN   = regexp.MustCompile(`(?i)\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|dev|cloud|internal|local|lan|corp|home|co|us|uk|de|eu)\b`)
-	reSecret = regexp.MustCompile(`(?i)^(-{0,2}[a-z_-]*(?:pass|secret|token|key|auth|cred)[a-z_-]*)=.*$`)
+	reIPv4  = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	reIPv6  = regexp.MustCompile(`(?i)(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4})?|::(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4}`)
+	reMAC   = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?:[:-][0-9a-f]{2}){5}\b`)
+	reUUID  = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	reEmail = regexp.MustCompile(`\S+@\S+`)
+	reFQDN  = regexp.MustCompile(`(?i)\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|dev|cloud|internal|local|lan|corp|home|co|us|uk|de|eu)\b`)
+	// reSecret finds key=value where the key mentions a credential, anywhere in
+	// the argument (--password=, rd.luks.key=, DB_TOKEN=, ...).
+	reSecret = regexp.MustCompile(`(?i)[A-Za-z0-9._-]*(?:pass|secret|token|key|auth|cred|pwd|luks)[A-Za-z0-9._-]*=\S*`)
+	// reAddrKV are boot/network parameters that carry addresses or names.
+	reAddrKV   = regexp.MustCompile(`(?i)\b(?:BOOTIF|ifname|nameserver|vlan|bond|team|bridge)=\S*|\bip=\S*:\S*`)
+	rePassFlag = regexp.MustCompile(`^-p.+`)
+	reUserPath = regexp.MustCompile(`(/home|/Users|/media)/[^/\s]+`)
+	reTokenPfx = regexp.MustCompile(`^(?:ghp_|gho_|ghs_|ghu_|github_pat_|glpat-|xox[a-z]-|xox[a-z]|eyJ|sk-|AKIA|ASIA|AIza|npm_|pypi-)`)
 )
 
-func redactArg(a string) string {
-	if reSecret.MatchString(a) {
-		return reSecret.ReplaceAllString(a, "$1=[redacted]")
+// benignKey are parameters whose name contains a secret-looking word but
+// whose value is a plain setting that tuning rules read.
+var benignKey = map[string]bool{"iommu.passthrough": true, "vconsole.keymap": true, "rd.vconsole.keymap": true, "keymap": true}
+
+// scrubPaths hides user names in home-like paths.
+func scrubPaths(s string) string { return reUserPath.ReplaceAllString(s, "$1/[user]") }
+
+// looksSecret reports whether a bare argument looks like a credential: a
+// known token prefix, or 20+ characters mixing letters, digits and symbols
+// with no path separator.
+func looksSecret(a string) bool {
+	if reTokenPfx.MatchString(a) && len(a) >= 8 {
+		return true
 	}
+	if len(a) < 20 || strings.HasPrefix(a, "-") || strings.ContainsAny(a, "/ =") {
+		return false
+	}
+	var lower, upper, digit, sym bool
+	for _, r := range a {
+		switch {
+		case r >= 'a' && r <= 'z':
+			lower = true
+		case r >= 'A' && r <= 'Z':
+			upper = true
+		case r >= '0' && r <= '9':
+			digit = true
+		default:
+			sym = true
+		}
+	}
+	n := 0
+	for _, b := range []bool{lower, upper, digit, sym} {
+		if b {
+			n++
+		}
+	}
+	return n >= 3
+}
+
+func redactArg(a string) string {
+	if rePassFlag.MatchString(a) && !strings.HasPrefix(a, "--") {
+		return "-p[redacted]"
+	}
+	a = reSecret.ReplaceAllStringFunc(a, func(m string) string {
+		k, _, _ := strings.Cut(m, "=")
+		if benignKey[strings.ToLower(k)] {
+			return m
+		}
+		return k + "=[redacted]"
+	})
+	a = reAddrKV.ReplaceAllStringFunc(a, func(m string) string {
+		k, _, _ := strings.Cut(m, "=")
+		return k + "=[redacted]"
+	})
 	a = reEmail.ReplaceAllString(a, "[redacted]")
 	a = reUUID.ReplaceAllString(a, "[uuid]")
+	a = reMAC.ReplaceAllString(a, "[mac]")
+	a = reIPv6.ReplaceAllStringFunc(a, func(ip string) string {
+		if ip == "::1" || ip == "::" {
+			return ip
+		}
+		return "[ip]"
+	})
 	a = reIPv4.ReplaceAllStringFunc(a, func(ip string) string {
 		if ip == "0.0.0.0" || strings.HasPrefix(ip, "127.") {
 			return ip
 		}
 		return "[ip]"
 	})
+	a = scrubPaths(a)
 	return reFQDN.ReplaceAllString(a, "[host]")
 }
 
@@ -291,11 +404,18 @@ func keepArgv(raw string) string {
 	if len(args) > 2 {
 		args = args[:2]
 	}
-	for i, a := range args {
-		args[i] = redactArg(a)
+	// A process title ("sshd-session: alice [priv]", "postgres: alice db ...")
+	// carries user, database or client names: keep the program name only.
+	if prog, _, ok := strings.Cut(args[0], ": "); ok || strings.HasSuffix(args[0], ":") {
+		prog = strings.TrimSuffix(prog, ":")
+		return prog + ": [redacted]\x00"
 	}
-	if strings.HasPrefix(args[0], "sshd:") { // process title carries the login name
-		args = []string{"sshd: [redacted]"}
+	for i, a := range args {
+		if i > 0 && looksSecret(a) {
+			args[i] = "[redacted]"
+			continue
+		}
+		args[i] = redactArg(a)
 	}
 	return strings.Join(args, "\x00") + "\x00"
 }
@@ -364,7 +484,7 @@ func trimLimits(s string) string {
 var reHexID = regexp.MustCompile(`[0-9a-f]{12,64}`)
 
 // scrubCgroup replaces container IDs; unit and slice names stay.
-func scrubCgroup(s string) string { return reHexID.ReplaceAllString(s, "[id]") }
+func scrubCgroup(s string) string { return scrubPaths(reHexID.ReplaceAllString(s, "[id]")) }
 
 func (c *capturer) procs() {
 	ents, err := os.ReadDir(c.r.Proc)
@@ -372,10 +492,15 @@ func (c *capturer) procs() {
 		c.snap.Warnings = append(c.snap.Warnings, err.Error())
 		return
 	}
+	seen := 0
 	for _, e := range ents {
 		pid, err := strconv.Atoi(e.Name())
 		if err != nil || !e.IsDir() {
 			continue
+		}
+		if seen++; seen > maxCaptureProcs {
+			c.snap.Warnings = append(c.snap.Warnings, "process limit reached: remaining processes skipped")
+			break
 		}
 		dir := filepath.Join(c.r.Proc, e.Name())
 		comm, err := readLimited(filepath.Join(dir, "comm"), 64)
@@ -403,9 +528,10 @@ func (c *capturer) procs() {
 
 func (c *capturer) sys() {
 	s := c.r.Sys
-	for _, rel := range []string{"sys_vendor", "product_name", "bios_vendor", "chassis_asset_tag"} {
+	for _, rel := range []string{"sys_vendor", "product_name", "bios_vendor"} {
 		c.file("sys", s, "class/dmi/id/"+rel, nil)
 	}
+	c.file("sys", s, "class/dmi/id/chassis_asset_tag", keepCloudAssetTag)
 	cpu := "devices/system/cpu/"
 	c.glob("sys", s, cpu+"cpu[0-9]*/topology/physical_package_id", nil)
 	c.glob("sys", s, cpu+"cpu[0-9]*/topology/core_id", nil)
@@ -548,6 +674,20 @@ func (c *capturer) pci() {
 	}
 }
 
+// cloudAssetTags are the chassis_asset_tag values the host collector (and
+// cloud detection) recognise; any other tag may be a customer asset number.
+var cloudAssetTags = []string{"7783-7084-3265-9085-8269-3286-77"}
+
+// keepCloudAssetTag keeps a known cloud asset tag and drops everything else.
+func keepCloudAssetTag(s string) string {
+	for _, t := range cloudAssetTags {
+		if strings.TrimSpace(s) == t {
+			return t + "\n"
+		}
+	}
+	return ""
+}
+
 // netFS are filesystem types whose device field is a remote address.
 var netFS = map[string]bool{"nfs": true, "nfs4": true, "cifs": true, "smb3": true, "ceph": true, "glusterfs": true, "lustre": true, "afs": true, "9p": true}
 
@@ -573,7 +713,7 @@ func sanitizeMounts(s string) string {
 			}
 		}
 		f[3] = strings.Join(opts, ",")
-		f[1] = redactArg(f[1])
+		f[1] = scrubCgroup(redactArg(f[1]))
 		b.WriteString(strings.Join(f[:4], " ") + " 0 0\n")
 	}
 	return b.String()
@@ -621,7 +761,7 @@ func (c *capturer) kconfig() {
 			text = string(b)
 		}
 	}
-	if text == "" && rel != "" {
+	if text == "" && rel != "" && !strings.ContainsAny(rel, `/\`) && !strings.Contains(rel, "..") {
 		text, _ = readLimited(filepath.Join(filepath.Dir(c.r.Proc), "boot", "config-"+rel), 16<<20)
 	}
 	if text == "" || rel == "" {

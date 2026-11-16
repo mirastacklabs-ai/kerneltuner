@@ -266,11 +266,18 @@ func existsUnder(r facts.Root, p string) bool {
 	return err == nil
 }
 
+// procMagicLink matches /proc/<pid|self|thread-self>/{root,cwd,exe}, magic
+// links that lead outside any fake root.
+var procMagicLink = regexp.MustCompile(`^/proc/(?:[0-9]+|self|thread-self)/(?:root|cwd|exe)(?:/|$)`)
+
 // ResolveUnder maps /proc/..., /sys/..., /etc/..., /run/... or /var/... to the
 // corresponding directory of r. The path is cleaned first, so it cannot
 // escape the root.
 func ResolveUnder(r facts.Root, p string) (string, bool) {
 	c := filepath.Clean("/" + strings.TrimPrefix(p, "/"))
+	if procMagicLink.MatchString(c) {
+		return "", false // /proc/<pid>/{root,cwd,exe} jump out of the root
+	}
 	for _, m := range []struct{ prefix, dir string }{
 		{"/proc", r.Proc}, {"/sys", r.Sys}, {"/etc", r.Etc}, {"/run", r.Run}, {"/var", r.Var},
 	} {
@@ -317,6 +324,9 @@ type compiled struct {
 	err  error
 }
 
+// maxExprNodes bounds the size of a rule expression's syntax tree.
+const maxExprNodes = 10000
+
 var progCache sync.Map // expression source -> *compiled
 
 // Compile compiles src against Env. Programs are cached by source text, so
@@ -326,7 +336,7 @@ func Compile(src string) (*vm.Program, error) {
 		cc := c.(*compiled)
 		return cc.prog, cc.err
 	}
-	prog, err := expr.Compile(containsCall.ReplaceAllString(src, "contains_("), expr.Env(Env{}), expr.AsAny())
+	prog, err := expr.Compile(containsCall.ReplaceAllString(src, "contains_("), expr.Env(Env{}), expr.AsAny(), expr.MaxNodes(maxExprNodes))
 	progCache.Store(src, &compiled{prog, err})
 	return prog, err
 }

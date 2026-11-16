@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
-	"github.com/mirastacklabs-ai/kerneltuner/internal/fixture"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/fixturetest"
 )
 
 func collect(t *testing.T, name string) *facts.Facts {
 	t.Helper()
-	root, _, _ := fixture.Load(t, name)
+	root, _, _ := fixturetest.Load(t, name)
 	f, err := facts.Collect(root)
 	if err != nil {
 		t.Fatal(err)
