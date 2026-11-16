@@ -131,7 +131,7 @@ Metric keys must use exactly this naming:
 - `numa.<node>.<field>` from `/sys/devices/system/node/node*/numastat`
 - `nic.<if>.<stat>` from `/sys/class/net/<if>/statistics/*`
 
-Gauges: conntrack.\*, fs.file_nr.\*, sockstat.\*, psi.\*.
+Gauges: conntrack.\*, fs.file_nr.\*, sockstat.\*, psi.\*, plus `vmstat.nr_*` and `Tcp.{CurrEstab,MaxConn,Rto*}` (amended in wave 2). Everything else is a counter, and its rate is per second.
 
 ## Rules
 
