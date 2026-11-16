@@ -53,7 +53,7 @@ release-check: ## Validate .goreleaser.yaml
 	$(GR_RUN) check
 
 release-snapshot: ## Build a local snapshot release into dist/ (no publish)
-	$(GR_RUN) release --snapshot --clean
+	$(GR_RUN) release --snapshot --clean --skip=sign
 
 .PHONY: e2e
 e2e: ## End-to-end tests (docker only; see test/e2e/run.sh)
