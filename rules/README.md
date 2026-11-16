@@ -112,7 +112,7 @@ Several rules may target the same setting `(kind, param, target)`: for example `
 `kerneltuner scan --fixture NAME` is a hidden developer flag (also accepted by `generate` and `apply`). It materializes `testdata/fixtures/NAME` into a temp dir, uses it as `--root` and injects the fixture's `values` and `rates`, so you can see what your rule does without writing a golden test first:
 
 ```
-kerneltuner --rules-dir rules --pack apps/nginx --json scan --all --fixture nginx-raised-nofile
+KERNELTUNER_FIXTURES=testdata/fixtures kerneltuner --rules-dir rules --pack apps/nginx --json scan --all --fixture nginx-raised-nofile
 ```
 
-Run it from inside the repository (the fixtures are found by walking up to `go.mod`). `--rules-dir` replaces the embedded packs (point it at a rules tree such as `rules`); `--pack` limits the run to one pack. `kerneltuner validate` runs every golden test; each fixture is materialized and collected once per run.
+Run it from the repository root with `KERNELTUNER_FIXTURES=testdata/fixtures` set (or `--fixtures-dir testdata/fixtures`); the fixtures directory is never searched for upwards. `kerneltuner validate` also finds `testdata/fixtures` by itself when the working directory (or the parent of `--rules-dir`) holds `rules/` and `testdata/`; elsewhere it fails unless you pass `--fixtures-dir` or `--skip-golden`. `--rules-dir` replaces the embedded packs (point it at a rules tree such as `rules`); `--pack` limits the run to one pack. `kerneltuner validate` runs every golden test; each fixture is materialized and collected once per run.

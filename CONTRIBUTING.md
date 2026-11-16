@@ -22,11 +22,10 @@ Everything runs in Docker. Do not install Go or any tool on your host. You need 
 | `make release-check` | Validate `.goreleaser.yaml` |
 | `make release-snapshot` | Build a local snapshot release into `dist/` (no publish) |
 
-Run `make help` for the current list. To validate the rules and run every golden test:
+Run `make help` for the current list. To validate the rules and run every golden test (run from the repository root; `validate` finds `testdata/fixtures` there, or use `--fixtures-dir`/`KERNELTUNER_FIXTURES`):
 
 ```sh
-docker run --rm -v "$PWD":/src -v kerneltuner-gocache:/go -w /src -e GOCACHE=/go/cache \
-  golang:1.27 go run ./cmd/kerneltuner validate
+make validate
 ```
 
 CI runs gofmt, `go vet`, `go test -race`, golangci-lint, a build plus `kerneltuner validate`, and `goreleaser check` on every pull request.

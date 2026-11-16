@@ -112,9 +112,9 @@ Everything runs in Docker. The Go build cache lives in the `kerneltuner-gocache`
 make build
 
 # Validate schema, source registration, fixtures and every golden test.
-# Run it in a container (the binary is linux/amd64 or arm64 as built).
-docker run --rm -v "$PWD":/src -v kerneltuner-gocache:/go -w /src -e GOCACHE=/go/cache \
-  golang:1.27 go run ./cmd/kerneltuner validate
+# Run from the repository root (same as: KERNELTUNER_FIXTURES=testdata/fixtures
+# bin/kerneltuner validate, in a container).
+make validate
 
 # Run the golden tests only
 docker run --rm -v "$PWD":/src -v kerneltuner-gocache:/go -w /src -e GOCACHE=/go/cache \
@@ -122,11 +122,12 @@ docker run --rm -v "$PWD":/src -v kerneltuner-gocache:/go -w /src -e GOCACHE=/go
 
 # See what a rule does against a fixture, before writing the golden test
 docker run --rm -v "$PWD":/src -v kerneltuner-gocache:/go -w /src -e GOCACHE=/go/cache \
+  -e KERNELTUNER_FIXTURES=testdata/fixtures \
   golang:1.27 go run ./cmd/kerneltuner --rules-dir rules --pack apps/example --json \
   scan --all --fixture example-small-somaxconn
 ```
 
-`--fixture NAME` is a hidden developer flag on `scan`, `generate` and `apply`. It materializes `testdata/fixtures/NAME` into a temp dir, uses it as `--root` and injects its `values` and `rates`. Run it from inside the repository, because fixtures are found by walking up to `go.mod`. `--rules-dir` replaces the embedded packs and `--pack` limits the run to one pack. Use `explain <rule-id>` to read the rule as a user sees it.
+`--fixture NAME` is a hidden developer flag on `scan`, `generate` and `apply`. It materializes `testdata/fixtures/NAME` into a temp dir, uses it as `--root` and injects its `values` and `rates`. Run it from the repository root with `KERNELTUNER_FIXTURES=testdata/fixtures` set (or `--fixtures-dir`); the fixtures directory is never searched for upwards. `--rules-dir` replaces the embedded packs and `--pack` limits the run to one pack. Use `explain <rule-id>` to read the rule as a user sees it.
 
 `validate` must pass with no problems before you open a pull request. CI runs it. It flags any source without a quote. Check your quotes against the live page with `sources --check --only <pack>`; this makes outbound HTTP requests and sends no host data.
 

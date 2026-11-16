@@ -84,6 +84,8 @@ jobs:
       - name: build
         run: CGO_ENABLED=0 go build -trimpath -o bin/kerneltuner ./cmd/kerneltuner
       - name: kerneltuner validate (rules, sources, golden tests)
+        env:
+          KERNELTUNER_FIXTURES: testdata/fixtures
         run: ./bin/kerneltuner validate
 
   goreleaser-check:

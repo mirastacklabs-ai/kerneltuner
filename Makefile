@@ -14,13 +14,16 @@ LDFLAGS    := -s -w -X $(PKG).Version=$(VERSION) -X $(PKG).GitCommit=$(COMMIT) -
 DOCKER_RUN := docker run --rm -v $(CURDIR):$(WORKDIR) -v $(CACHE_VOL):/go -w $(WORKDIR) -e GOCACHE=/go/cache
 GO_RUN     := $(DOCKER_RUN) $(GO_IMAGE)
 
-.PHONY: help build test lint fmt tidy vet cover release-check release-snapshot
+.PHONY: help build validate test lint fmt tidy vet cover release-check release-snapshot
 
 help: ## Show targets
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
 
 build: ## Build static linux binary to bin/kerneltuner
 	$(GO_RUN) env CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags '$(LDFLAGS)' -o bin/kerneltuner ./cmd/kerneltuner
+
+validate: build ## Validate rules, sources and run every golden test
+	$(DOCKER_RUN) -e KERNELTUNER_FIXTURES=testdata/fixtures $(GO_IMAGE) ./bin/kerneltuner validate
 
 test: ## Run unit tests with the race detector
 	$(DOCKER_RUN) -e CGO_ENABLED=1 $(GO_IMAGE) go test -race ./...
