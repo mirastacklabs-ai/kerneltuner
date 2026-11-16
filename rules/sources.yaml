@@ -1,0 +1,6 @@
+# Registry of upstream documentation that rules cite.
+# Each entry:
+#   url:           canonical URL of the upstream document
+#   project:       upstream project or vendor (e.g. linux-kernel, nginx, haproxy)
+#   covers:        kernel/app versions the document applies to
+#   last_reviewed: YYYY-MM-DD the entry was last checked against upstream
