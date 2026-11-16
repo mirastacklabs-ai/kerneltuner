@@ -1,0 +1,26 @@
+description: "web-16c-64g-nginx already tuned: bbr+fq, 16M tcp buffers, wide port range, tw_reuse=1, notsent_lowat, conntrack sized; some listen drops and heavy TIME_WAIT present"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "proc/sys/net/core/default_qdisc": "fq\n"
+  "proc/sys/net/core/netdev_max_backlog": "8192\n"
+  "proc/sys/net/core/netdev_budget": "600\n"
+  "proc/sys/net/core/netdev_budget_usecs": "4000\n"
+  "proc/sys/net/ipv4/tcp_available_congestion_control": "reno cubic bbr\n"
+  "proc/sys/net/ipv4/tcp_congestion_control": "bbr\n"
+  "proc/sys/net/ipv4/tcp_max_syn_backlog": "8192\n"
+  "proc/sys/net/ipv4/tcp_mem": "1500000 2000000 3000000\n"
+  "proc/sys/net/ipv4/tcp_notsent_lowat": "131072\n"
+  "proc/sys/net/ipv4/tcp_rmem": "4096 131072 16777216\n"
+  "proc/sys/net/ipv4/tcp_slow_start_after_idle": "0\n"
+  "proc/sys/net/ipv4/tcp_tw_reuse": "1\n"
+  "proc/sys/net/ipv4/tcp_wmem": "4096 16384 16777216\n"
+  "proc/sys/net/ipv4/ip_local_port_range": "1024 65535\n"
+  "proc/sys/net/netfilter/nf_conntrack_max": "1048576\n"
+  "run/kerneltuner-fixture/ethtool/eth0.json": "{\"combined\":16,\"combined_max\":63,\"rx_ring\":4096,\"rx_ring_max\":8192,\"tx_ring\":1024,\"tx_ring_max\":8192}\n"
+values:
+  "sockstat.tcp.tw": 40000
+rates:
+  "TcpExt.ListenDrops": 5
+  "Tcp.OutSegs": 10000
+  "Tcp.RetransSegs": 400

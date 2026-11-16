@@ -1,0 +1,7 @@
+description: "web-16c-64g-nginx on kernel 6.6 already running bbr with default_qdisc fq_codel"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "proc/sys/kernel/osrelease": "6.6.30-generic\n"
+  "proc/sys/net/ipv4/tcp_available_congestion_control": "reno cubic bbr\n"
+  "proc/sys/net/ipv4/tcp_congestion_control": "bbr\n"

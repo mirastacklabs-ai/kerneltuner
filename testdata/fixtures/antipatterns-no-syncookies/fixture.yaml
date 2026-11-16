@@ -1,0 +1,5 @@
+description: "base-linux with tcp_syncookies=0"
+synthetic: true
+extends: base-linux
+files:
+  "proc/sys/net/ipv4/tcp_syncookies": "0\n"

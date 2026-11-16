@@ -1,0 +1,7 @@
+description: "web-16c-64g-nginx with the conntrack table 88 percent full"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "proc/sys/net/netfilter/nf_conntrack_count": "230000\n"
+values:
+  "conntrack.count": 230000

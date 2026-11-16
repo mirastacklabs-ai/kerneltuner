@@ -1,0 +1,14 @@
+description: "web-16c-64g-nginx plus a 10G single-queue NIC eth1 with RPS off"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "run/kerneltuner-fixture/ethtool/eth1.json": "{\"combined\":1,\"combined_max\":1,\"rx_ring\":1024,\"rx_ring_max\":4096,\"tx_ring\":1024,\"tx_ring_max\":4096}\n"
+  "sys/class/net/eth1/device/numa_node": "0\n"
+  "sys/class/net/eth1/device/vendor": "0x1af4\n"
+  "sys/class/net/eth1/mtu": "1500\n"
+  "sys/class/net/eth1/operstate": "up\n"
+  "sys/class/net/eth1/queues/rx-0/rps_cpus": "0\n"
+  "sys/class/net/eth1/queues/tx-0/xps_cpus": "0\n"
+  "sys/class/net/eth1/speed": "10000\n"
+symlinks:
+  "sys/class/net/eth1/device/driver": "../../../bus/pci/drivers/virtio_net"

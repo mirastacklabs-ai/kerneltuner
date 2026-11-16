@@ -1,0 +1,11 @@
+description: "web-16c-64g-nginx under burst: softnet drops and time_squeeze, listen drops, NIC rx_missed_errors, rx ring 512"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "run/kerneltuner-fixture/ethtool/eth0.json": "{\"combined\":16,\"combined_max\":63,\"rx_ring\":512,\"rx_ring_max\":8192,\"tx_ring\":512,\"tx_ring_max\":8192}\n"
+rates:
+  "softnet.dropped": 850
+  "softnet.time_squeeze": 120
+  "TcpExt.ListenDrops": 14
+  "TcpExt.ListenOverflows": 14
+  "nic.eth0.rx_missed_errors": 300

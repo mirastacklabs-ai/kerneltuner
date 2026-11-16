@@ -1,0 +1,98 @@
+- id: antipattern.tcp_tw_recycle
+  title: tcp_tw_recycle is enabled
+  kind: antipattern
+  param: net.ipv4.tcp_tw_recycle
+  domain: network
+  detect: 'exists("/proc/sys/net/ipv4/tcp_tw_recycle") && sysctlNum("net.ipv4.tcp_tw_recycle") == 1'
+  namespaced: false
+  risk: high
+  rationale: >-
+    tcp_tw_recycle was removed in Linux 4.12 (commit 4396e46187ca) because it breaks clients behind NAT:
+    the per-destination timestamp it relied on is not monotonic across different hosts sharing one address,
+    so their SYNs are silently dropped. After timestamp offset randomisation the feature was broken for
+    everyone. A kernel older than 4.12 that still has the file and has it set to 1 should turn it off
+    (use tcp_tw_reuse for outbound connections instead). On 4.12 and later the file does not exist.
+  verify: "sysctl net.ipv4.tcp_tw_recycle reads 0 (or the file is gone) and clients behind NAT connect reliably"
+  sources:
+    - https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=4396e46187ca
+    - https://kernelnewbies.org/Linux_4.12
+  tests:
+    - fixture: legacy-4.9-c10k
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: antipattern.tcp_timestamps_off
+  title: TCP timestamps are disabled
+  kind: antipattern
+  param: net.ipv4.tcp_timestamps
+  domain: network
+  detect: 'sysctl("net.ipv4.tcp_timestamps") == "0"'
+  namespaced: true
+  risk: medium
+  rationale: >-
+    The default is 1 (enabled, with random per-connection offsets, namespaced since Linux 4.13). TCP timestamps
+    provide PAWS protection against old duplicate segments from a previous incarnation of a connection, and
+    tcp_tw_reuse relies on PAWS to reuse TIME_WAIT sockets safely. Turning them off removes that protection
+    and makes tcp_tw_reuse unsafe or useless.
+  verify: "sysctl net.ipv4.tcp_timestamps reads 1"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: legacy-4.9-c10k
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: antipattern.tcp_syncookies_off
+  title: SYN cookies are disabled
+  kind: antipattern
+  param: net.ipv4.tcp_syncookies
+  domain: network
+  detect: 'sysctl("net.ipv4.tcp_syncookies") == "0"'
+  namespaced: true
+  risk: medium
+  rationale: >-
+    The default is 1: syncookies are a fallback that engages only when the SYN backlog overflows, so the host
+    stays reachable during a SYN flood. The docs describe them as a fallback facility that is not meant to
+    help legitimate load (they disable some TCP options), and for legitimate bursts they say to tune
+    tcp_max_syn_backlog, tcp_synack_retries and tcp_abort_on_overflow instead. Setting 0 removes the flood
+    protection, so a SYN flood then fills the backlog and drops all new connections.
+  verify: "sysctl net.ipv4.tcp_syncookies reads 1 (or 2 for testing only)"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: antipatterns-no-syncookies
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: antipattern.tcp_mem_oversized
+  title: tcp_mem pressure limit exceeds physical RAM
+  kind: antipattern
+  param: net.ipv4.tcp_mem
+  domain: network
+  applies:
+    when: 'sysctl("net.ipv4.tcp_mem") != "" && facts.Memory.TotalBytes > 0'
+  detect: >-
+    float(split(sysctl("net.ipv4.tcp_mem"), " ")[2]) * 4096 > float(facts.Memory.TotalBytes)
+  namespaced: false
+  risk: high
+  rationale: >-
+    tcp_mem holds three limits in pages: below the first TCP is not under memory pressure, above the second it
+    enters pressure mode, and above the third it refuses to allocate. The kernel computes them at boot from
+    RAM. If the third value, at 4 KiB per page, is larger than all physical memory, the limit can never
+    trigger before the OOM killer does. The tuned profiles carry the warning to ensure you do not oversubscribe
+    system memory with these settings. The rule assumes 4 KiB pages. Buffer ceilings in tcp_rmem and
+    tcp_wmem count against this budget.
+  verify: "tcp_mem[2] x page size is below total RAM, with room left for applications and the page cache"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+    - https://github.com/redhat-performance/tuned/tree/master/profiles
+  tests:
+    - fixture: antipatterns-oversized-tcpmem
+      expect: { status: firing }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

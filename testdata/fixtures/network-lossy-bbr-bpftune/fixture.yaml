@@ -1,0 +1,6 @@
+description: "bpftune-tuned-host (6.6, bbr available, bpftune running) with 4 percent TCP retransmits"
+synthetic: true
+extends: bpftune-tuned-host
+rates:
+  "Tcp.OutSegs": 10000
+  "Tcp.RetransSegs": 400

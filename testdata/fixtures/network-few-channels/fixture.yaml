@@ -1,0 +1,7 @@
+description: "web-16c-64g-nginx with only 4 of 63 NIC channels in use on 8 cores, time_squeeze rising"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "run/kerneltuner-fixture/ethtool/eth0.json": "{\"combined\":4,\"combined_max\":63,\"rx_ring\":1024,\"rx_ring_max\":8192,\"tx_ring\":1024,\"tx_ring_max\":8192}\n"
+rates:
+  "softnet.time_squeeze": 60

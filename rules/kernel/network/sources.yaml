@@ -1,0 +1,60 @@
+- url: https://docs.kernel.org/networking/ip-sysctl.html
+  project: linux
+  covers: net.ipv4.* and net.core.somaxconn sysctl semantics and defaults
+  last_reviewed: 2026-11-16
+- url: https://docs.kernel.org/admin-guide/sysctl/net.html
+  project: linux
+  covers: net.core.* sysctls (netdev_max_backlog, netdev_budget, default_qdisc)
+  last_reviewed: 2026-11-16
+- url: https://kernelnewbies.org/Linux_5.4
+  project: linux
+  covers: somaxconn 128 to 4096 and tcp_max_syn_backlog default bump in 5.4
+  last_reviewed: 2026-11-16
+- url: https://kernelnewbies.org/Linux_4.12
+  project: linux
+  covers: netdev_budget_usecs added in 4.12
+  last_reviewed: 2026-11-16
+- url: https://kernelnewbies.org/Linux_4.13
+  project: linux
+  covers: internal TCP pacing added in 4.13
+  last_reviewed: 2026-11-16
+- url: https://kernelnewbies.org/Linux_4.9
+  project: linux
+  covers: BBR congestion control added in 4.9
+  last_reviewed: 2026-11-16
+- url: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6
+  project: linux
+  covers: 'commit "net: increase SOMAXCONN to 4096"'
+  last_reviewed: 2026-11-16
+- url: https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
+  project: linux
+  covers: defaults of netdev_max_backlog (1000), netdev_budget (300), netdev_budget_usecs
+  last_reviewed: 2026-11-16
+- url: https://raw.githubusercontent.com/torvalds/linux/master/net/ipv4/tcp_bbr.c
+  project: linux
+  covers: BBR works with fq pacing, otherwise falls back to per-socket hrtimer pacing
+  last_reviewed: 2026-11-16
+- url: https://docs.kernel.org/networking/snmp_counter.html
+  project: linux
+  covers: TcpExtListenOverflows/ListenDrops meaning
+  last_reviewed: 2026-11-16
+- url: https://docs.kernel.org/networking/nf_conntrack-sysctl.html
+  project: linux
+  covers: nf_conntrack_max and nf_conntrack_buckets defaults
+  last_reviewed: 2026-11-16
+- url: https://docs.kernel.org/networking/scaling.html
+  project: linux
+  covers: RSS, RPS, RFS, XPS configuration guidance
+  last_reviewed: 2026-11-16
+- url: https://man7.org/linux/man-pages/man8/ethtool.8.html
+  project: ethtool
+  covers: ring (-g/-G) and channel (-l/-L) settings
+  last_reviewed: 2026-11-16
+- url: https://github.com/redhat-performance/tuned/tree/master/profiles
+  project: tuned
+  covers: network-throughput profile values (tcp_rmem, tcp_wmem, notsent_lowat, slow_start_after_idle)
+  last_reviewed: 2026-11-16
+- url: https://github.com/oracle/bpftune
+  project: bpftune
+  covers: BBR switch at loss above about 1.5 percent; softnet and buffer tuners
+  last_reviewed: 2026-11-16
