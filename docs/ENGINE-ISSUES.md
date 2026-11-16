@@ -25,3 +25,10 @@
 - [postgres] Need per-process oom_score_adj fact (/proc/<pid>/oom_score_adj) so oom advice can be ok.
 - [postgres] Document values()/all() expr builtins in rules/README.md.
 - [conflict] app.postgres.overcommit_memory=2 vs app.redis.overcommit_memory=1 on the same host: reconciliation must warn loudly, not pick silently.
+- [cncf] sysctl()/sysctlNum() expr helpers lack the Root.Proc/sys fallback the sysctl kind has (fs.inotify.*, net.bridge.* read as 0).
+- [cncf] `validate --rules-dir DIR` reported 0 rules on a copy of rules/ — bug.
+- [cncf] No facts: kernel config (/proc/config.gz, /boot/config-*), /proc/mounts (fstype, noatime), process ionice, oom_score_adj, NPROC/CORE limits.
+- [messaging] expr rejects uint64 literals > int64 (MaxUint64 unlimited); expose `unlimited` constant / isUnlimited().
+- [nosql] No nproc limit kind (ES/OpenSearch/Cassandra need LimitNPROC).
+- [nosql] sources.yaml YAML errors should name the file.
+- [cassandra] read_ahead per-device cannot tell which disk holds data (needs mounts→device mapping).
