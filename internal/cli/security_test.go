@@ -65,3 +65,29 @@ func TestWriteNoFollow(t *testing.T) {
 		t.Fatalf("content %q", b)
 	}
 }
+
+// Q02: as root, apply/rollback --root refuse a symlinked base (real symlink).
+func TestRootRunRefusesSymlinkedRootBase(t *testing.T) {
+	old := geteuid
+	geteuid = func() int { return 0 }
+	t.Cleanup(func() { geteuid = old })
+	dir, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "etc")); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"apply", "--yes", "--root", dir},
+		{"rollback", "--yes", "--root", dir},
+	} {
+		cmd := NewRootCmd()
+		cmd.SetArgs(args)
+		cmd.SetOut(&strings.Builder{})
+		cmd.SetErr(&strings.Builder{})
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "refusing --root") {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Errorf("files written through the symlink: %v", ents)
+	}
+}

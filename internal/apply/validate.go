@@ -124,6 +124,9 @@ func resolveLive(root facts.Root, p string) (string, error) {
 	default:
 		return "", fmt.Errorf("live path %q is not under %s/sys or %s", facts.SafeText(p), root.Proc, root.Sys)
 	}
+	if err := checkDangerousLive(root, p); err != nil {
+		return "", err
+	}
 	rb, err := filepath.EvalSymlinks(base)
 	if err != nil {
 		return "", err
@@ -134,6 +137,9 @@ func resolveLive(root facts.Root, p string) (string, error) {
 	}
 	if !under(rb, res) || res == rb {
 		return "", fmt.Errorf("live path %q resolves to %q outside %s", facts.SafeText(p), facts.SafeText(res), base)
+	}
+	if err := checkDangerousLive(root, res); err != nil {
+		return "", err
 	}
 	if st, err := os.Lstat(res); err != nil || !st.Mode().IsRegular() {
 		return "", fmt.Errorf("live path %q is not a regular file", facts.SafeText(res))
@@ -203,4 +209,35 @@ func liveBase(root facts.Root, p string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("snapshot live path %q is not under %s/sys or %s", facts.SafeText(p), root.Proc, root.Sys)
+}
+
+// dangerousProc lists writable /proc/sys targets (relative to Proc/sys) whose
+// value is executed or loaded by the kernel: writing them leads to running
+// code, so they are never a tuning target. Paths ending in "/**" cover the
+// whole subtree.
+var dangerousProc = []string{
+	"fs/binfmt_misc/**",
+	"kernel/core_pattern",
+	"kernel/modprobe",
+	"kernel/hotplug",
+	"kernel/poweroff_cmd",
+}
+
+// checkDangerousLive refuses p when it lies on the dangerousProc list.
+func checkDangerousLive(root facts.Root, p string) error {
+	rel, err := filepath.Rel(filepath.Join(root.Proc, "sys"), filepath.Clean(p))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil
+	}
+	rel = filepath.ToSlash(rel)
+	for _, d := range dangerousProc {
+		if pre, ok := strings.CutSuffix(d, "/**"); ok {
+			if rel == pre || strings.HasPrefix(rel, pre+"/") {
+				return fmt.Errorf("live path /proc/sys/%s is a code-execution target and is never written", facts.SafeText(rel))
+			}
+		} else if rel == d {
+			return fmt.Errorf("live path /proc/sys/%s is a code-execution target and is never written", facts.SafeText(rel))
+		}
+	}
+	return nil
 }

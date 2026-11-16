@@ -49,6 +49,9 @@ func newRollbackCmd(g *globalOpts) *cobra.Command {
 			if err := requireRoot(g); err != nil {
 				return err
 			}
+			if err := checkTrustedRoot(g); err != nil {
+				return err
+			}
 			var id string
 			if len(args) == 1 {
 				id = args[0]

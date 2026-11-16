@@ -35,6 +35,9 @@ func newApplyCmd(g *globalOpts) *cobra.Command {
 				if err := requireRoot(g); err != nil {
 					return err
 				}
+				if err := checkTrustedRoot(g); err != nil {
+					return err
+				}
 				if !yes {
 					return errors.New("apply changes the system: re-run with --yes to confirm, or --dry-run to preview")
 				}
@@ -56,6 +59,15 @@ func newApplyCmd(g *globalOpts) *cobra.Command {
 	cmd.Flags().Bool("dry-run", false, "show what would change without writing")
 	cmd.Flags().Bool("yes", false, "confirm writing (required unless --dry-run)")
 	return cmd
+}
+
+// checkTrustedRoot makes a root-run --root refuse a tree an unprivileged user
+// could have rigged (symlinked bases, foreign owner, group/world-writable).
+func checkTrustedRoot(g *globalOpts) error {
+	if g.RootDir == "" || geteuid() != 0 {
+		return nil
+	}
+	return apply.CheckRoot(g.RootDir, g.Root())
 }
 
 // requireRoot refuses unless running as uid 0 or --root was given explicitly.

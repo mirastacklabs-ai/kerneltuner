@@ -170,7 +170,7 @@ func Apply(plan *Plan, opts Options) (*Result, error) {
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			fsState.DidNotExist = true
-			snap.CreatedDirs = append(snap.CreatedDirs, missingDirs(filepath.Dir(p))...)
+			snap.CreatedDirs = append(snap.CreatedDirs, missingDirs(root.Etc, filepath.Dir(p))...)
 		case err != nil:
 			return nil, fmt.Errorf("read %s: %w", p, err)
 		default:
@@ -430,10 +430,13 @@ func trusted(what string, m fileMeta) error {
 	return nil
 }
 
-// missingDirs lists dir and its ancestors that do not exist yet.
-func missingDirs(dir string) []string {
+// missingDirs lists dir and its ancestors that do not exist yet, stopping at
+// etc (inclusive): nothing above it is ever recorded, so a snapshot stays
+// valid for rollback (validateSnapshot) even on an empty --root.
+func missingDirs(etc, dir string) []string {
 	var out []string
-	for dir != "" && dir != filepath.Dir(dir) {
+	etc = filepath.Clean(etc)
+	for under(etc, dir) {
 		if _, err := os.Lstat(dir); err == nil {
 			break
 		}

@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
 )
 
 // euid is a variable so tests can simulate root or a foreign owner.
@@ -286,4 +288,34 @@ func listDirBeneath(base, dir string) ([]os.DirEntry, error) {
 	f := os.NewFile(uintptr(fd), dir)
 	defer func() { _ = f.Close() }()
 	return f.ReadDir(-1)
+}
+
+// CheckRoot verifies a --root tree before a privileged run acts on it: the
+// root directory and each of its proc, sys, etc and var bases must be real
+// directories (opened with O_NOFOLLOW, so never a symlink), owned by root and
+// not group- or world-writable. A base that does not exist yet is accepted:
+// root creates it, and its parent has been checked. dir is the --root value.
+func CheckRoot(dir string, root facts.Root) error {
+	for _, d := range []string{dir, root.Proc, root.Sys, root.Etc, root.Var} {
+		fd, err := unix.Open(d, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			switch {
+			case errors.Is(err, unix.ENOENT) && d != dir:
+				continue
+			case errors.Is(err, unix.ELOOP), errors.Is(err, unix.ENOTDIR):
+				return fmt.Errorf("refusing --root: %s is a symlink or not a directory", facts.SafeText(d))
+			}
+			return fmt.Errorf("refusing --root: %s: %w", facts.SafeText(d), err)
+		}
+		var st unix.Stat_t
+		err = unix.Fstat(fd, &st)
+		_ = unix.Close(fd)
+		if err != nil {
+			return fmt.Errorf("refusing --root: %s: %w", facts.SafeText(d), err)
+		}
+		if err := trusted(d, fileMeta{Mode: st.Mode & 0o7777, UID: st.Uid}); err != nil {
+			return fmt.Errorf("refusing --root: %w", err)
+		}
+	}
+	return nil
 }
