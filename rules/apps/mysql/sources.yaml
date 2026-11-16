@@ -1,8 +1,10 @@
-- url: https://dev.mysql.com/doc/refman/8.4/en/optimizing-innodb-diskio.html
+- url: https://docs.oracle.com/cd/E17952_01/mysql-8.4-en/optimizing-innodb-diskio.html
+  title: "10.5.8 Optimizing InnoDB Disk I/O (MySQL 8.4 Reference Manual)"
   project: mysql
   covers: "Use a noop or deadline I/O scheduler with native AIO on Linux"
   last_reviewed: 2026-11-16
-- url: https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html
+- url: https://docs.oracle.com/cd/E17952_01/mysql-8.4-en/server-system-variables.html
+  title: "7.1.8 Server System Variables (MySQL 8.4 Reference Manual)"
   project: mysql
   covers: open_files_limit (formula 10 + max_connections + table_open_cache*2 = 8161 by default; cannot exceed LimitNOFILE under systemd)
   last_reviewed: 2026-11-16

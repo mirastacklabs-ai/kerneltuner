@@ -1,20 +1,25 @@
-- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/vm-max-map-count.html
+- url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/vm-max-map-count
+  title: "Increase virtual memory | Elastic Docs"
   project: elasticsearch
   covers: "vm.max_map_count 1048576"
   last_reviewed: 2026-11-16
-- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-configuration-memory.html
+- url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory
+  title: "Disable swapping | Elastic Docs"
   project: elasticsearch
   covers: "disable swap, vm.swappiness=1, mlockall"
   last_reviewed: 2026-11-16
-- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/file-descriptors.html
+- url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/file-descriptors
+  title: "Increase the file descriptor limit | Elastic Docs"
   project: elasticsearch
   covers: "file descriptor limit 65535"
   last_reviewed: 2026-11-16
-- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/max-number-of-threads.html
+- url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/max-number-of-threads
+  title: "Increase the maximum number of threads | Elastic Docs"
   project: elasticsearch
   covers: "thread limit at least 4096 (no rule: no nproc limit kind)"
   last_reviewed: 2026-11-16
-- url: https://www.elastic.co/guide/en/elasticsearch/reference/current/system-config-tcpretries.html
+- url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/system-config-tcpretries
+  title: "Decrease the TCP retransmission timeout | Elastic Docs"
   project: elasticsearch
   covers: "net.ipv4.tcp_retries2=5"
   last_reviewed: 2026-11-16

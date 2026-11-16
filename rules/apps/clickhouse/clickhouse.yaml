@@ -19,7 +19,9 @@
     to GRUB_CMDLINE_LINUX_DEFAULT, run update-grub and reboot (the docs' method).
   verify: "cat /sys/kernel/mm/transparent_hugepage/enabled shows [madvise]; clickhouse-server logs no THP warning at startup"
   sources:
-    - https://clickhouse.com/docs/operations/tips
+    - url: https://clickhouse.com/docs/guides/oss/best-practices/tips
+      section: "Huge Pages"
+      quote: "Always set transparent huge pages to madvise."
   tests:
     - fixture: clickhouse-stock
       expect: { status: recommend, proposed: "madvise" }
@@ -46,8 +48,12 @@
     2 to 0 gives up the hard commit accounting other software on the host may rely on.
   verify: "sysctl vm.overcommit_memory prints 0 or 1"
   sources:
-    - https://clickhouse.com/docs/operations/tips
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - url: https://clickhouse.com/docs/guides/oss/best-practices/tips
+      section: "RAM"
+      quote: "Do not disable overcommit. The value cat /proc/sys/vm/overcommit_memory should be 0 or 1."
+    - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+      section: "overcommit_memory"
+      quote: "When this flag is 2, the kernel uses a \"never overcommit\" policy that attempts to prevent any overcommit of memory."
   tests:
     - fixture: clickhouse-overcommit-off
       expect: { status: recommend, proposed: "0" }
@@ -75,7 +81,9 @@
     so persist it with cpupower, tuned or a boot unit.
   verify: "scaling_governor reads performance on every CPU"
   sources:
-    - https://clickhouse.com/docs/operations/tips
+    - url: https://clickhouse.com/docs/guides/oss/best-practices/tips
+      section: "CPU Scaling Governor"
+      quote: "Always use the performance scaling governor."
   tests:
     - fixture: clickhouse-stock
       expect: { status: firing }
@@ -101,7 +109,9 @@
     recommendations page does not mention file limits, and the unit file gives no reason for the number.
   verify: "grep 'open files' /proc/<clickhouse pid>/limits shows at least 500000"
   sources:
-    - https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/packages/clickhouse-server.service
+    - url: https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/packages/clickhouse-server.service
+      section: "[Service]"
+      quote: "LimitNOFILE=500000"
   tests:
     - fixture: clickhouse-stock
       expect: { status: recommend, proposed: "500000", target: clickhouse-server.service }
@@ -129,7 +139,9 @@
     `echo mq-deadline | sudo tee /sys/block/{{.target}}/queue/scheduler`; persist with a udev rule or tuned.
   verify: "cat /sys/block/<disk>/queue/scheduler shows [mq-deadline]"
   sources:
-    - https://clickhouse.com/docs/operations/tips
+    - url: https://clickhouse.com/docs/guides/oss/best-practices/tips
+      section: "Storage Subsystem"
+      quote: "For HDD, choose the mq-deadline or CFQ scheduler, and for SSD, choose noop."
   tests:
     - fixture: clickhouse-stock
       expect: { status: recommend, proposed: "mq-deadline", target: sda }
@@ -156,7 +168,9 @@
     use ext4 or xfs, add `noatime` to its mount options, and avoid compressed, encrypted and NFS volumes.
   verify: "findmnt -T /var/lib/clickhouse shows ext4 or xfs with noatime"
   sources:
-    - https://clickhouse.com/docs/operations/tips
+    - url: https://clickhouse.com/docs/guides/oss/best-practices/tips
+      section: "File System"
+      quote: "Ext4 is the most reliable option. Set the mount options noatime. XFS works well too."
   tests:
     - fixture: clickhouse-stock
       expect: { status: recommend }

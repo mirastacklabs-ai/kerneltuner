@@ -13,7 +13,9 @@
     The MySQL 8.4 manual says the effective open_files_limit is derived from max_connections and table_open_cache (10 + max_connections + table_open_cache*2, or max_connections*5, whichever is larger) and that "using the defaults for these variables yields 8161". mysqld asks the OS for that many descriptors with setrlimit(), and "on Linux systems using systemd, the value cannot be set greater than LimitNOFILE (this is DefaultLimitNOFILE, if LimitNOFILE is not set)". A soft limit below 8161 therefore means the server cannot get what the defaults need and will log a warning and fail with "Too many open files" under load. 8161 holds only for default max_connections and table_open_cache; raise it further if you increased either.
   verify: "cat /proc/<mysqld pid>/limits shows Max open files >= 8161 and SELECT @@open_files_limit returns at least that"
   sources:
-    - https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html
+    - url: https://docs.oracle.com/cd/E17952_01/mysql-8.4-en/server-system-variables.html
+      section: "open_files_limit"
+      quote: "10 + max_connections + (table_open_cache * 2). Using the defaults for these variables yields 8161."
   tests:
     - fixture: mysql-stock
       expect: { status: recommend, proposed: "8161", target: mysql.service }
@@ -41,7 +43,9 @@
     `echo none | sudo tee /sys/block/{{.target}}/queue/scheduler` (or mq-deadline). Make it persistent with a udev rule or a tuned disk plugin setting.
   verify: "cat /sys/block/<disk>/queue/scheduler shows [none] or [mq-deadline]; compare InnoDB I/O latency with your own benchmark"
   sources:
-    - https://dev.mysql.com/doc/refman/8.4/en/optimizing-innodb-diskio.html
+    - url: https://docs.oracle.com/cd/E17952_01/mysql-8.4-en/optimizing-innodb-diskio.html
+      section: "Use a noop or deadline I/O scheduler with native AIO on Linux"
+      quote: "With native AIO, the type of I/O scheduler has greater influence on I/O performance. Generally, noop and deadline I/O schedulers are recommended."
   tests:
     - fixture: mysql-stock
       expect: { status: recommend, proposed: "none", target: nvme0n1 }

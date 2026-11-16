@@ -13,7 +13,9 @@
     The PostgreSQL manual says the default Linux virtual-memory behaviour is not optimal for PostgreSQL: because of memory overcommit the kernel may terminate a server process, including the postmaster, when PostgreSQL or another process runs the machine out of virtual memory. Strict mode (`sysctl -w vm.overcommit_memory=2`) does not prevent the OOM killer altogether but "will lower the chances significantly". The manual also suggests tuning vm.overcommit_ratio. Risk: in strict mode allocations fail once the commit limit (swap + overcommit_ratio% of RAM) is reached, so fork-heavy or large-mapping software on the same host can start failing with ENOMEM; size overcommit_ratio and swap first.
   verify: "sysctl vm.overcommit_memory prints 2; grep -E 'CommitLimit|Committed_AS' /proc/meminfo shows Committed_AS comfortably below CommitLimit"
   sources:
-    - https://www.postgresql.org/docs/current/kernel-resources.html
+    - url: https://www.postgresql.org/docs/current/kernel-resources.html
+      section: "18.4.4. Linux Memory Overcommit"
+      quote: "This is done by selecting strict overcommit mode via sysctl: sysctl -w vm.overcommit_memory=2"
   tests:
     - fixture: postgres-stock
       expect: { status: recommend, proposed: "2" }
@@ -37,7 +39,9 @@
   rationale: >-
     The PostgreSQL manual describes this as an approach usable with or without vm.overcommit_memory=2: setting the postmaster's oom_score_adj to -1000 guarantees it is not targeted by the OOM killer, so a killed backend makes the server restart cleanly instead of losing the supervisor. The rule is only emitted when strict overcommit is not already in place. The systemd OOMScoreAdjust= spelling is the standard unit-file equivalent and is not stated in the PostgreSQL page. Risk: if the child processes inherit -1000 (PG_OOM_ADJUST_FILE unset) the OOM killer cannot pick PostgreSQL backends at all and may kill something else.
   sources:
-    - https://www.postgresql.org/docs/current/kernel-resources.html
+    - url: https://www.postgresql.org/docs/current/kernel-resources.html
+      section: "18.4.4. Linux Memory Overcommit"
+      quote: "Another approach, which can be used with or without altering vm.overcommit_memory, is to set the process-specific OOM score adjustment value for the postmaster process to -1000, thereby guaranteeing it will not be targeted by the OOM killer."
   tests:
     - fixture: postgres-stock
       expect: { status: recommend }
@@ -61,8 +65,12 @@
   rationale: >-
     The page count depends on shared_buffers and the other shared memory settings, so the PostgreSQL manual gives no fixed value; only the server can compute it (shared_memory_size_in_huge_pages). The rule therefore reports the situation without proposing a number. Reserved huge pages are taken out of general memory permanently, and the manual notes the kernel may fail to allocate them immediately because of fragmentation, so reserve them early (right after boot). The rule is informational: a host that deliberately keeps huge_pages=off is fine.
   sources:
-    - https://www.postgresql.org/docs/current/kernel-resources.html
-    - https://www.postgresql.org/docs/current/runtime-config-resource.html
+    - url: https://www.postgresql.org/docs/current/kernel-resources.html
+      section: "18.4.5. Linux Huge Pages"
+      quote: "You will also have to configure the operating system to provide enough huge pages of the desired size. The runtime-computed parameter shared_memory_size_in_huge_pages reports the number of huge pages required."
+    - url: https://www.postgresql.org/docs/current/runtime-config-resource.html
+      section: "19.4.1. Memory"
+      quote: "With on, failure to request huge pages will prevent the server from starting up."
   tests:
     - fixture: postgres-stock
       expect: { status: firing }
@@ -86,7 +94,9 @@
   rationale: >-
     The documentation only says THP is discouraged and does not name a replacement value, so this rule reports the clear case (always) and does not propose a number. The setting is system-wide and other software on the host (JVMs, other databases) may rely on THP. The manual's wording is version-hedged ("some users on some Linux versions"), so treat it as a prompt to measure.
   sources:
-    - https://www.postgresql.org/docs/current/runtime-config-resource.html
+    - url: https://www.postgresql.org/docs/current/runtime-config-resource.html
+      section: "19.4.1. Memory"
+      quote: "That feature has been known to cause performance degradation with PostgreSQL for some users on some Linux versions, so its use is currently discouraged (unlike explicit use of huge_pages)."
   tests:
     - fixture: postgres-stock
       expect: { status: firing }

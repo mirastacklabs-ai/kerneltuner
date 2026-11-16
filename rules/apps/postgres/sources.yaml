@@ -1,8 +1,10 @@
 - url: https://www.postgresql.org/docs/current/kernel-resources.html
+  title: "PostgreSQL: Documentation: 18: 18.4. Managing Kernel Resources"
   project: postgresql
   covers: Linux memory overcommit (vm.overcommit_memory=2, postmaster oom_score_adj -1000, PG_OOM_ADJUST_*), Linux huge pages (vm.nr_hugepages, shared_memory_size_in_huge_pages, ulimit -l, vm.hugetlb_shm_group)
   last_reviewed: 2026-11-16
 - url: https://www.postgresql.org/docs/current/runtime-config-resource.html
+  title: "PostgreSQL: Documentation: 18: 19.4. Resource Consumption"
   project: postgresql
   covers: huge_pages (try/on/off, only the main shared memory area) and the note that Transparent Huge Pages are discouraged
   last_reviewed: 2026-11-16

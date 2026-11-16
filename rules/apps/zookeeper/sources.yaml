@@ -1,8 +1,10 @@
 - url: https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+  title: "ZooKeeper: Because Coordinating Distributed Systems is a Zoo"
   project: zookeeper
   covers: do-not-swap guidance, max heap vs real memory, clientPortListenBacklog default
   last_reviewed: 2026-11-16
 - url: https://docs.kernel.org/networking/ip-sysctl.html
+  title: "IP Sysctl — The Linux Kernel documentation"
   project: linux
   covers: net.core.somaxconn as the listen() backlog cap, tcp_max_syn_backlog
   last_reviewed: 2026-11-16

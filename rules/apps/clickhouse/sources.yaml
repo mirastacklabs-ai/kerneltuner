@@ -1,12 +1,15 @@
-- url: https://clickhouse.com/docs/operations/tips
+- url: https://clickhouse.com/docs/guides/oss/best-practices/tips
+  title: "OSS usage recommendations - ClickHouse Documentation"
   project: clickhouse
   covers: "governor, overcommit, THP madvise, HDD scheduler, filesystem and noatime"
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/packages/clickhouse-server.service
+  title: "clickhouse-server.service (ClickHouse source repository, packages/)"
   project: clickhouse
   covers: "packaged unit LimitNOFILE=500000"
   last_reviewed: 2026-11-16
 - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+  title: "Documentation for /proc/sys/vm/ — The Linux Kernel documentation"
   project: linux
   covers: "vm.overcommit_memory modes 0, 1, 2"
   last_reviewed: 2026-11-16

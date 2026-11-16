@@ -13,7 +13,9 @@
     Find what is swapping (`vmstat 1`, `smem`) and free memory: lower the ZooKeeper max heap (the guide suggests, for example, 3 GB on a 4 GB machine), stop co-located memory hogs, or move ZooKeeper to a bigger host. If you also lower vm.swappiness, treat that as your own choice; the ZooKeeper docs do not specify a value.
   verify: "vmstat.pswpin and vmstat.pswpout rates stay 0; ZooKeeper latency (zk_avg_latency) is stable"
   sources:
-    - https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+    - url: https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+      section: "Single Machine Requirements"
+      quote: "In order for ZooKeeper to function with any sort of timeliness, it simply cannot be allowed to swap."
   tests:
     - fixture: zookeeper-swapping
       expect: { status: firing }
@@ -37,7 +39,9 @@
     Lower -Xmx (set via JVMFLAGS or SERVER_JVMFLAGS) so the heap fits in real memory with room for the OS and page cache; load-test to pick the value.
   verify: "the -Xmx on the ZooKeeper command line is below MemTotal in /proc/meminfo, with headroom"
   sources:
-    - https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+    - url: https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+      section: "Single Machine Requirements"
+      quote: "Therefore, make certain that the maximum heap size given to ZooKeeper is not bigger than the amount of real memory available to ZooKeeper."
   tests:
     - fixture: zookeeper-heap-over-ram
       expect: { status: firing }
@@ -61,8 +65,12 @@
   rationale: >-
     The ZooKeeper guide documents clientPortListenBacklog (3.4.14, 3.5.5, 3.6.0 and later) and the 50-entry Linux default. The kernel documents net.core.somaxconn as the limit of the socket listen() backlog, so a larger application value only takes effect if somaxconn allows it. The rule applies only while ListenOverflows is increasing. Risk: low; a larger queue holds more half-served connections.
   sources:
-    - https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+      section: "Advanced Configuration"
+      quote: "By default, this value is unset (-1) which, on Linux, uses a backlog of 50."
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: "somaxconn"
+      quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"
   tests:
     - fixture: zookeeper-listen-overflow
       expect: { status: recommend }

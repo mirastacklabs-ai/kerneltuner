@@ -18,8 +18,12 @@
     Linux 5.4). On 5.4+ with the default the rule is not-applicable; it fires on older kernels or hosts where somaxconn
     was lowered. kerneltuner cannot see a custom `-b` value.
   sources:
-    - https://raw.githubusercontent.com/memcached/memcached/master/doc/memcached.1
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://raw.githubusercontent.com/memcached/memcached/master/doc/memcached.1
+      section: "-b, --listen-backlog"
+      quote: "The default is 1024."
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: "somaxconn"
+      quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"
   tests:
     - fixture: memcached-stock
       expect: { status: recommend }
@@ -48,8 +52,12 @@
     headroom, monitor swap use, and consider very little or no swap on cache hosts.
   verify: "swapon --show prints nothing, or free -m shows no swap in use"
   sources:
-    - https://github.com/memcached/memcached/wiki/Hardware
-    - https://raw.githubusercontent.com/memcached/memcached/master/README.md
+    - url: https://github.com/memcached/memcached/wiki/Hardware
+      section: "Avoid Swapping"
+      quote: "Do not over-allocate memory and expect swap to save you. Performance will be very, very poor."
+    - url: https://raw.githubusercontent.com/memcached/memcached/master/README.md
+      section: "Environment"
+      quote: "Just make sure the memcached machines don't swap."
   tests:
     - fixture: memcached-stock
       expect: { status: firing }
@@ -76,7 +84,9 @@
     performance drop under benchmarking conditions" when it runs across multiple NUMA nodes; its workaround is one
     instance per node bound via numactl. The cost is more instances to run and clients that must shard across them.
   sources:
-    - https://github.com/memcached/memcached/wiki/Hardware
+    - url: https://github.com/memcached/memcached/wiki/Hardware
+      section: "NUMA Considerations"
+      quote: "If you are extremely sensitive to performance and have NUMA systems, the best workaround is to run one memcached instance per NUMA node and bind the instances via numactl or similar."
   tests:
     - fixture: memcached-stock
       expect: { status: recommend }

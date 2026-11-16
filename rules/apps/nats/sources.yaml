@@ -1,4 +1,5 @@
-- url: https://docs.nats.io/running-a-nats-service/introduction/installation
+- url: https://docs.nats.io/learn/deployment/
+  title: "Deployment & Upgrades Deep Dive | NATS Documentation"
   project: nats
-  covers: installation guide, reviewed; contains no host-level OS tuning
+  covers: deployment guide (the former installation page now redirects here), reviewed; contains no host-level OS tuning
   last_reviewed: 2026-11-16

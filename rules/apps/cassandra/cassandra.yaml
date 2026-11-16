@@ -16,9 +16,15 @@
     chosen. Risk: a higher limit only allows more mappings per process.
   verify: "sysctl vm.max_map_count prints at least 1048575"
   sources:
-    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra-sysctl.conf
-    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.postinst
-    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - url: https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra-sysctl.conf
+      section: "vm.max_map_count"
+      quote: "vm.max_map_count = 1048575"
+    - url: https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.postinst
+      section: "configure"
+      quote: "vm.max_map_count to 1048575 in the host."
+    - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+      section: "max_map_count"
+      quote: "The default value is 65530."
   tests:
     - fixture: cassandra-stock
       expect: { status: recommend, proposed: "1048575" }
@@ -46,8 +52,12 @@
     enable SO_KEEPALIVE.
   verify: "sysctl net.ipv4.tcp_keepalive_time prints 300 or less"
   sources:
-    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra-sysctl.conf
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra-sysctl.conf
+      section: "net.ipv4.tcp_keepalive_time"
+      quote: "net.ipv4.tcp_keepalive_time=300"
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: "tcp_keepalive_time"
+      quote: "How often TCP sends out keepalive messages when keepalive is enabled. Default: 2hours."
   tests:
     - fixture: cassandra-stock
       expect: { status: recommend, proposed: "300" }
@@ -74,8 +84,12 @@
     of a low limit is the usual "too many open files" on SSTables and client sockets.
   verify: "grep 'open files' /proc/<cassandra pid>/limits shows at least 100000"
   sources:
-    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.conf
-    - https://raw.githubusercontent.com/apache/cassandra/trunk/redhat/cassandra.conf
+    - url: https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.conf
+      section: "limits"
+      quote: "cassandra - nofile 100000"
+    - url: https://raw.githubusercontent.com/apache/cassandra/trunk/redhat/cassandra.conf
+      section: "limits"
+      quote: "cassandra - nofile 100000"
   tests:
     - fixture: cassandra-stock
       expect: { status: recommend, proposed: "100000", target: cassandra.service }
@@ -99,8 +113,12 @@
     no reason for the setting. Risk: an unlimited memlock lets the process pin as much RAM as it asks for.
   verify: "grep 'locked memory' /proc/<cassandra pid>/limits shows unlimited"
   sources:
-    - https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.conf
-    - https://raw.githubusercontent.com/apache/cassandra/trunk/redhat/cassandra.conf
+    - url: https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.conf
+      section: "limits"
+      quote: "cassandra - memlock unlimited"
+    - url: https://raw.githubusercontent.com/apache/cassandra/trunk/redhat/cassandra.conf
+      section: "limits"
+      quote: "cassandra - memlock unlimited"
   tests:
     - fixture: cassandra-stock
       expect: { status: recommend, proposed: infinity, target: cassandra.service }
@@ -131,7 +149,9 @@
     4KB in 512-byte sectors). Persist with a udev rule or the tuned disk plugin, then compare latency.
   verify: "cat /sys/block/<disk>/queue/read_ahead_kb prints 4 (SSD) or 64 (HDD) or less; read latency does not regress"
   sources:
-    - https://cassandra.apache.org/doc/latest/cassandra/getting-started/production.html
+    - url: https://cassandra.apache.org/doc/latest/cassandra/getting-started/production.html
+      section: "Read ahead"
+      quote: "The recommended read ahead settings are: Hardware Initial Recommendation Spinning Disks 64KB SSD 4KB"
   tests:
     - fixture: cassandra-stock
       expect: { status: recommend, proposed: "4", target: nvme0n1 }
@@ -164,7 +184,9 @@
     and row cache so it does not; consider `swapoff -a` and removing the swap entries from /etc/fstab.
   verify: "swapon --show prints nothing, or free -m shows no swap in use under load"
   sources:
-    - https://raw.githubusercontent.com/apache/cassandra/trunk/conf/cassandra.yaml
+    - url: https://raw.githubusercontent.com/apache/cassandra/trunk/conf/cassandra.yaml
+      section: "row_cache_size"
+      quote: "Do never allow your system to swap."
   tests:
     - fixture: cassandra-stock
       expect: { status: firing }

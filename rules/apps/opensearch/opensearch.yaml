@@ -16,7 +16,9 @@
     Risk: a higher limit only allows more mappings per process.
   verify: "sysctl vm.max_map_count prints at least 262144"
   sources:
-    - https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/
+    - url: https://docs.opensearch.org/latest/install-and-configure/install-opensearch/index/
+      section: "Important settings"
+      quote: "For production workloads running on Linux, make sure the Linux setting vm.max_map_count is set to at least 262144."
   tests:
     - fixture: opensearch-stock
       expect: { status: recommend, proposed: "262144" }
@@ -42,7 +44,9 @@
     has. The docs do not describe the failure mode of a lower limit.
   verify: "grep 'open files' /proc/<opensearch pid>/limits shows at least 65536"
   sources:
-    - https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/
+    - url: https://docs.opensearch.org/latest/install-and-configure/install-opensearch/index/
+      section: "Important settings"
+      quote: "nofile 65536 Sets a limit of 65536 open files for the OpenSearch user."
   tests:
     - fixture: opensearch-stock
       expect: { status: recommend, proposed: "65536", target: opensearch.service }
@@ -69,8 +73,12 @@
     /etc/fstab, or confirm the node sets bootstrap.memory_lock: true with memlock unlimited.
   verify: "swapon --show prints nothing"
   sources:
-    - https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/
-    - https://opensearch.org/docs/latest/install-and-configure/install-opensearch/tar/
+    - url: https://docs.opensearch.org/latest/install-and-configure/install-opensearch/index/
+      section: "Important settings"
+      quote: "Swapping can dramatically decrease performance and stability, so you should ensure it is disabled on production clusters."
+    - url: https://docs.opensearch.org/latest/install-and-configure/install-opensearch/tar/
+      section: "Step 2: Configure important system settings"
+      quote: "Disable memory paging and swapping performance on the host to improve performance. sudo swapoff -a"
   tests:
     - fixture: opensearch-stock
       expect: { status: firing }

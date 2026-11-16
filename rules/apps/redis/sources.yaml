@@ -1,20 +1,25 @@
 - url: https://redis.io/docs/latest/operate/oss_and_stack/management/admin/
+  title: "Redis administration | Docs"
   project: redis
   covers: vm.overcommit_memory=1 and disabling Transparent Huge Pages
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
+  title: "redis.conf (Redis source repository)"
   project: redis
   covers: tcp-backlog 511 vs somaxconn, maxclients 10000 and the 32 reserved fds, disable-thp
   last_reviewed: 2026-11-16
 - url: https://docs.kernel.org/networking/ip-sysctl.html
+  title: "IP Sysctl — The Linux Kernel documentation"
   project: linux
   covers: net.core.somaxconn default and its role as the listen backlog cap
   last_reviewed: 2026-11-16
 - url: https://valkey.io/topics/admin/
+  title: "Valkey Documentation · Administration"
   project: valkey
   covers: vm.overcommit_memory=1 and disabling Transparent Huge Pages for Valkey
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+  title: "valkey.conf (Valkey source repository)"
   project: valkey
   covers: tcp-backlog 511 vs somaxconn, maxclients 10000 minus 32 reserved fds, disable-thp
   last_reviewed: 2026-11-16

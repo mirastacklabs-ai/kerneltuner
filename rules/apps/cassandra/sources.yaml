@@ -1,32 +1,40 @@
 - url: https://cassandra.apache.org/doc/latest/cassandra/getting-started/production.html
+  title: "Production recommendations | Apache Cassandra Documentation"
   project: cassandra
   covers: "read-ahead recommendations (64KB spinning, 4KB SSD)"
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/apache/cassandra/trunk/conf/cassandra.yaml
+  title: "cassandra.yaml (Apache Cassandra source repository, conf/)"
   project: cassandra
   covers: "row_cache_size note: do never allow your system to swap"
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra-sysctl.conf
+  title: "cassandra-sysctl.conf (Apache Cassandra Debian packaging)"
   project: cassandra
   covers: "packaged sysctls vm.max_map_count=1048575 and tcp_keepalive_time=300"
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.postinst
+  title: "cassandra.postinst (Apache Cassandra Debian packaging)"
   project: cassandra
   covers: "postinst message recommending vm.max_map_count 1048575 on the host"
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/apache/cassandra/trunk/debian/cassandra.conf
+  title: "cassandra.conf limits (Apache Cassandra Debian packaging)"
   project: cassandra
   covers: "packaged limits: memlock unlimited, nofile 100000"
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/apache/cassandra/trunk/redhat/cassandra.conf
+  title: "cassandra.conf limits (Apache Cassandra RPM packaging)"
   project: cassandra
   covers: "packaged limits (RPM): memlock unlimited, nofile 100000"
   last_reviewed: 2026-11-16
 - url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+  title: "Documentation for /proc/sys/vm/ — The Linux Kernel documentation"
   project: linux
   covers: "vm.max_map_count meaning and default 65530"
   last_reviewed: 2026-11-16
 - url: https://docs.kernel.org/networking/ip-sysctl.html
+  title: "IP Sysctl — The Linux Kernel documentation"
   project: linux
   covers: "tcp_keepalive_time default 2 hours"
   last_reviewed: 2026-11-16

@@ -17,7 +17,9 @@
     process.
   verify: "sysctl vm.max_map_count prints at least 1048576"
   sources:
-    - https://www.elastic.co/guide/en/elasticsearch/reference/current/vm-max-map-count.html
+    - url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/vm-max-map-count
+      section: "Verify vm.max_map_count configuration"
+      quote: "If the operating system's default vm.max_map_count value is 1048576 or higher, no configuration change is necessary. If the default value is lower than 1048576, configure the vm.max_map_count parameter to 1048576."
   tests:
     - fixture: elasticsearch-stock
       expect: { status: recommend, proposed: "1048576" }
@@ -49,7 +51,9 @@
     that uses bootstrap.memory_lock already protects the heap and can ignore this.
   verify: "sysctl vm.swappiness prints 1 or 0, or swapon --show is empty"
   sources:
-    - https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-configuration-memory.html
+    - url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory
+      section: "Configure swappiness"
+      quote: "Another option available on Linux systems is to ensure that the sysctl value vm.swappiness is set to 1."
   tests:
     - fixture: elasticsearch-stock
       expect: { status: recommend, proposed: "1" }
@@ -79,7 +83,9 @@
     drop connections that would have recovered; use a higher value there.
   verify: "sysctl net.ipv4.tcp_retries2 prints 5"
   sources:
-    - https://www.elastic.co/guide/en/elasticsearch/reference/current/system-config-tcpretries.html
+    - url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/system-config-tcpretries
+      section: "Decrease the TCP retransmission timeout"
+      quote: "You can decrease the maximum number of TCP retransmissions to 5 by running the following command as root. Five retransmissions corresponds with a timeout of around 13 seconds."
   tests:
     - fixture: elasticsearch-stock
       expect: { status: recommend, proposed: "5" }
@@ -105,7 +111,9 @@
     default to 65535, so a lower soft limit means the process runs outside the packaged unit or the unit was overridden.
   verify: "grep 'open files' /proc/<elasticsearch pid>/limits shows at least 65535"
   sources:
-    - https://www.elastic.co/guide/en/elasticsearch/reference/current/file-descriptors.html
+    - url: https://www.elastic.co/docs/deploy-manage/deploy/self-managed/file-descriptors
+      section: "Increase the file descriptor limit"
+      quote: "RPM and Debian packages already default the maximum number of file descriptors to 65535 and do not require further configuration."
   tests:
     - fixture: elasticsearch-stock
       expect: { status: recommend, proposed: "65535", target: elasticsearch.service }

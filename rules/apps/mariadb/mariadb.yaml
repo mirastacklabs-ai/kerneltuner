@@ -13,8 +13,12 @@
     The MariaDB KB says that by default "both the soft and hard limit default to 1024" on many systems and that "on an active database server, it is very easy to exceed 1024 open file descriptors"; its example sets both soft and hard nofile to 65535 for the mysql user (via limits.conf, or LimitNOFILE under systemd). The open_files_limit variable page adds that MariaDB sets the limit with setrlimit and "cannot set this to exceed the hard limit imposed by the operating system", and that with open_files_limit=0 it computes MAX(max_connections*5, max_connections + table_open_cache*2). 65535 is the KB's example value, not a computed requirement; size it above that formula for large max_connections or table_open_cache.
   verify: "cat /proc/<mariadbd pid>/limits shows Max open files >= 65535 (soft and hard) and SELECT @@open_files_limit is not capped below what you configured"
   sources:
-    - https://mariadb.com/kb/en/configuring-linux-for-mariadb/
-    - https://mariadb.com/kb/en/server-system-variables/
+    - url: https://mariadb.com/docs/server/server-management/install-and-upgrade-mariadb/configuring-mariadb/mariadb-performance-advanced-configurations/configuring-linux-for-mariadb
+      section: "Configuring the Open Files Limit"
+      quote: "On an active database server, it is very easy to exceed 1024 open file descriptors. Therefore, you may need to increase the soft and hard limits."
+    - url: https://mariadb.com/docs/server/server-management/variables-and-modes/server-system-variables
+      section: "open_files_limit"
+      quote: "MariaDB cannot set this to exceed the hard limit imposed by the operating system. Therefore, you may also need to change the hard limit."
   tests:
     - fixture: mariadb-stock
       expect: { status: recommend, proposed: "65535", target: mariadb.service }
@@ -38,7 +42,9 @@
     The MariaDB KB explains that swapped-out memory is far slower than RAM, that MariaDB's internal algorithms assume memory is not swap, and that database locks are particularly inefficient in swap. It says the Linux default of 60 "encourages the server to use swap" and that "for MariaDB databases, it is recommended to set swappiness to a value of 1". The page notes that since RHEL 6.4 swappiness=0 more aggressively avoids swapping and so increases the risk of OOM killing under memory and I/O pressure, which is why 1 rather than 0 is proposed. The KB also advises keeping some swap space rather than disabling it, so the kernel can degrade gracefully. Risk: with little swap and memory pressure the OOM killer fires sooner; size the buffer pool so the host does not swap in the first place.
   verify: "sysctl vm.swappiness prints 1; si/so columns in vmstat stay near 0 under load"
   sources:
-    - https://mariadb.com/kb/en/configuring-swappiness/
+    - url: https://mariadb.com/docs/server/server-management/install-and-upgrade-mariadb/configuring-mariadb/mariadb-performance-advanced-configurations/configuring-swappiness
+      section: "Setting Swappiness on Linux"
+      quote: "For MariaDB databases, it is recommended to set swappiness to a value of 1."
   tests:
     - fixture: mariadb-stock
       expect: { status: recommend, proposed: "1" }
@@ -66,7 +72,9 @@
     `echo {{.proposed}} | sudo tee /sys/block/{{.target}}/queue/scheduler`. Persist it with a udev rule or a tuned disk plugin setting.
   verify: "cat /sys/block/<disk>/queue/scheduler shows the proposed name in brackets; biolatency mean does not get worse"
   sources:
-    - https://mariadb.com/kb/en/configuring-linux-for-mariadb/
+    - url: https://mariadb.com/docs/server/server-management/install-and-upgrade-mariadb/configuring-mariadb/mariadb-performance-advanced-configurations/configuring-linux-for-mariadb
+      section: "IO scheduler"
+      quote: "Recommended schedulers are none, for SSDs and NVMes, and mq-deadline (previously called deadline) for hard disks."
   tests:
     - fixture: mariadb-stock
       expect: { status: recommend, proposed: "none", target: nvme0n1 }

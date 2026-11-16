@@ -13,7 +13,9 @@
     The Kafka OS documentation says the broker uses file descriptors for log segments and for open connections, and recommends "at least 100000 allowed file descriptors for the broker processes as a starting point". A broker with many partitions needs at least (number_of_partitions)*(partition_size/segment_size) descriptors for segments alone, and mmap'd index files keep an extra reference after close(), so the count grows with partitions. The soft limit shown is what the running broker actually has.
   verify: "cat /proc/<kafka pid>/limits shows Max open files >= 100000"
   sources:
-    - https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+    - url: https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+      section: "OS"
+      quote: "We recommend at least 100000 allowed file descriptors for the broker processes as a starting point."
   tests:
     - fixture: kafka-stock
       expect: { status: recommend, proposed: "100000", target: kafka.service }
@@ -35,7 +37,9 @@
   rationale: >-
     The Kafka docs tie vm.max_map_count to the maximum number of partitions a broker can host, because every segment's offset and time index is memory-mapped. The docs publish a sizing rule but no recommended value, so this rule only flags the default and shows the formula; it fires only when the value is at or below 65535, the default the docs cite. Risk: a higher value lets a process keep more mappings, which costs kernel memory per mapping; it is rarely a concern at the sizes involved.
   sources:
-    - https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+    - url: https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+      section: "OS"
+      quote: "By default, on a number of Linux systems, the value of vm.max_map_count is somewhere around 65535."
   tests:
     - fixture: kafka-stock
       expect: { status: recommend }
@@ -59,7 +63,9 @@
   rationale: >-
     The Kafka docs state that noatime removes a significant number of filesystem writes, especially when consumers bootstrap, and that tests on a busy cluster showed XFS Request Local Time of about 160 ms versus 250 ms or more for the best EXT4 configuration, with less variability. Data directories should also not share drives with application logs or other OS activity. Risk: remounting a data directory needs a maintenance window; moving to XFS means reformatting the volume and replicating data back.
   sources:
-    - https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+    - url: https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+      section: "General Filesystem Notes"
+      quote: "Kafka does not rely on the atime attributes at all, so it is safe to disable this."
   tests:
     - fixture: kafka-stock
       expect: { status: recommend }
@@ -81,8 +87,12 @@
   rationale: >-
     The kernel truncates a listen() backlog to net.core.somaxconn, so the application setting is silently capped by it. The rule applies only while ListenOverflows is increasing, since the default backlog of 50 is fine for steady connection counts. Risk: a larger queue only holds more half-served connections; it does not cost meaningful memory.
   sources:
-    - https://raw.githubusercontent.com/apache/kafka/trunk/server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://raw.githubusercontent.com/apache/kafka/trunk/server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java
+      section: "SOCKET_LISTEN_BACKLOG_SIZE_DOC"
+      quote: "The maximum number of pending connections on the socket."
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: "somaxconn"
+      quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"
   tests:
     - fixture: kafka-listen-overflow
       expect: { status: recommend }

@@ -13,9 +13,15 @@
   rationale: >-
     The accept queue is capped at net.core.somaxconn, which was 128 before Linux 5.4 and is 4096 since (kernel 5.4 commit 19f92a030ca6). On 5.4+ with the default Redis's 511 fits and the rule is not-applicable; it fires on older kernels or hosts where somaxconn was lowered. net.core.somaxconn is per-network-namespace, so inside a container it may be set per pod.
   sources:
-    - https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
-    - https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
+      section: "tcp-backlog"
+      quote: "make sure to raise both the value of somaxconn and tcp_max_syn_backlog"
+    - url: https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+      section: "tcp-backlog"
+      quote: "make sure to raise both the value of somaxconn and tcp_max_syn_backlog"
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: "somaxconn"
+      quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"
   tests:
     - fixture: redis-small-somaxconn
       expect: { status: recommend }
@@ -39,8 +45,12 @@
     Redis (and Valkey, whose admin guide is identical) documents that vm.overcommit_memory must be 1 so the fork() used for background saves (RDB/AOF rewrite) is not refused by the heuristic overcommit check when the dataset is large relative to free memory; without it BGSAVE can fail with a fork() error. The Redis guidance is not tied to a kernel version. Risk: mode 1 never refuses an allocation, so a memory-starved host relies on the OOM killer instead of failing allocations; size maxmemory and keep swap or headroom.
   verify: "sysctl vm.overcommit_memory prints 1; BGSAVE completes without a fork() error in the Redis log"
   sources:
-    - https://redis.io/docs/latest/operate/oss_and_stack/management/admin/
-    - https://valkey.io/topics/admin/
+    - url: https://redis.io/docs/latest/operate/oss_and_stack/management/admin/
+      section: "Linux"
+      quote: "Set the Linux kernel overcommit memory setting to 1. Add vm.overcommit_memory = 1 to /etc/sysctl.conf."
+    - url: https://valkey.io/topics/admin/
+      section: "Linux"
+      quote: "Set the Linux kernel overcommit memory setting to 1. Add vm.overcommit_memory = 1 to /etc/sysctl.conf."
   tests:
     - fixture: redis-bare-metal
       expect: { status: recommend, proposed: "1" }
@@ -68,10 +78,18 @@
     The Redis admin guide says to run `echo never > /sys/kernel/mm/transparent_hugepage/enabled` so THP does not hurt Redis memory use and latency (huge pages inflate copy-on-write during fork). redis.conf notes that with the kernel set to madvise or never its `disable-thp yes` has no effect because there is nothing to disable, and that with `always` Redis tries to disable THP for its own process; so only `always` is flagged and madvise is accepted. Risk: the setting is system-wide and may hurt other workloads (databases or JVMs that benefit from THP).
   verify: "cat /sys/kernel/mm/transparent_hugepage/enabled shows [never] or [madvise]; the latency monitor shows no fork spikes"
   sources:
-    - https://redis.io/docs/latest/operate/oss_and_stack/management/admin/
-    - https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
-    - https://valkey.io/topics/admin/
-    - https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+    - url: https://redis.io/docs/latest/operate/oss_and_stack/management/admin/
+      section: "Linux"
+      quote: "To ensure the Linux kernel feature Transparent Huge Pages does not impact Redis memory usage and latency, run the command: echo never > /sys/kernel/mm/transparent_hugepage/enabled to disable it."
+    - url: https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
+      section: "KERNEL transparent hugepage CONTROL"
+      quote: "to avoid latency problems specifically with fork(2) and CoW."
+    - url: https://valkey.io/topics/admin/
+      section: "Linux"
+      quote: "To ensure the Linux kernel feature Transparent Huge Pages does not impact Valkey memory usage and latency, run the command: echo never > /sys/kernel/mm/transparent_hugepage/enabled to disable it."
+    - url: https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+      section: "KERNEL transparent hugepage CONTROL"
+      quote: "to avoid latency problems specifically with fork(2) and CoW."
   tests:
     - fixture: redis-bare-metal
       expect: { status: recommend, proposed: "never" }
@@ -99,8 +117,12 @@
     redis.conf documents maxclients 10000 by default and says that if Redis cannot set the process file limit high enough it lowers maxclients to the current file limit minus 32 (fds Redis reserves for internal use), after which new connections get 'max number of clients reached'. 10000 + 32 = 10032 is therefore the minimum soft limit for the default; raise it further if maxclients is set higher or Redis Cluster is used (the cluster bus uses two connections per node). The soft limit shown is what Redis is actually running with, so a value below 10032 means Redis could not raise it (usually a low hard limit).
   verify: "cat /proc/<redis pid>/limits shows Max open files >= 10032, and Redis accepts up to maxclients connections"
   sources:
-    - https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
-    - https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+    - url: https://raw.githubusercontent.com/redis/redis/unstable/redis.conf
+      section: "maxclients"
+      quote: "minus 32 (as Redis reserves a few file descriptors for internal uses)."
+    - url: https://raw.githubusercontent.com/valkey-io/valkey/unstable/valkey.conf
+      section: "maxclients"
+      quote: "minus 32 (as the server reserves a few file descriptors for internal uses)."
   tests:
     - fixture: redis-low-nofile
       expect: { status: recommend, proposed: "10032", target: redis }

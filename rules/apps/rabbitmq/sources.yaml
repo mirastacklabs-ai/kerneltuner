@@ -1,12 +1,15 @@
 - url: https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/production-checklist.md
+  title: "Production Deployment Guidelines (RabbitMQ website source, docs/production-checklist.md)"
   project: rabbitmq
   covers: production checklist (source of www.rabbitmq.com/docs/production-checklist) - open file handle limit of at least 50K
   last_reviewed: 2026-11-16
 - url: https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+  title: "Networking and RabbitMQ (RabbitMQ website source, docs/networking.md)"
   project: rabbitmq
   covers: networking guide (source of www.rabbitmq.com/docs/networking) - somaxconn, tcp_max_syn_backlog, fin_timeout, keepalives, tcp_listen_options.backlog, ERL_MAX_PORTS
   last_reviewed: 2026-11-16
 - url: https://docs.kernel.org/networking/ip-sysctl.html
+  title: "IP Sysctl — The Linux Kernel documentation"
   project: linux
   covers: net.core.somaxconn as the listen() backlog cap, tcp_max_syn_backlog
   last_reviewed: 2026-11-16
