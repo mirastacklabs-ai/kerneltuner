@@ -1,0 +1,151 @@
+- id: ai.nvidia.persistenced
+  title: Run nvidia-persistenced
+  kind: service
+  param: nvidia-persistenced.service
+  domain: ai
+  applies:
+    when: 'accelCount("nvidia") > 0'
+  recommend: '"running"'
+  compare: eq
+  risk: low
+  rationale: >-
+    Without persistence, the driver unloads GPU state when the last client closes the device file, so the next CUDA
+    start pays the initialisation cost again. nvidia-persistenced keeps the device files open and, per NVIDIA, adds
+    minimal overhead once running. NVIDIA supports both it and legacy persistence mode (nvidia-smi -pm 1) but focuses
+    future development on the daemon and says legacy mode will eventually be deprecated and removed. The check
+    matches the systemd unit name, so a daemon started outside systemd is not detected.
+  advice: >-
+    Enable the daemon (ships with the driver; unit/init files are in the driver documentation directory):
+    systemctl enable --now nvidia-persistenced
+  verify: nvidia-persistenced process is running; nvidia-smi -q reports Persistence Mode Enabled
+  sources: [https://docs.nvidia.com/deploy/driver-persistence/persistence-daemon.html]
+  tests:
+    - fixture: gpu-8xh100
+      expect: { status: recommend, proposed: running }
+    - fixture: nvidia-gdr-ready
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: ai.nvidia.gpudirect-iommu
+  title: IOMMU must not translate for GPUDirect RDMA
+  kind: antipattern
+  param: GPUDirect RDMA IOMMU mode
+  domain: ai
+  applies:
+    when: 'accelCount("nvidia") > 0 && len(facts.RDMA) > 0'
+  detect: 'facts.IOMMU.Enabled && !facts.IOMMU.Passthrough'
+  risk: medium
+  reboot: true
+  rationale: >-
+    GPUDirect RDMA relies on all physical addresses being the same from the GPU's and the NIC's point of view, so it
+    is incompatible with any IOMMU translation other than 1:1. NVIDIA says the IOMMU must be disabled or configured
+    for pass-through. This host has an active IOMMU in translating mode and RDMA devices. The check cannot see
+    whether GPUDirect RDMA is actually in use, so it is a prerequisite check, not proof of breakage.
+  advice: >-
+    Add iommu=pt to the kernel command line (for example in GRUB_CMDLINE_LINUX, then update-grub and reboot), or
+    disable the IOMMU in firmware. Risk: pass-through weakens DMA isolation between devices and the kernel; keep the
+    IOMMU translating if you pass devices through to VMs with VFIO.
+  verify: /proc/cmdline contains iommu=pt (or iommu.passthrough=1); this rule reports ok
+  sources:
+    - https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
+    - https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
+  tests:
+    - fixture: gpu-8xh100
+      expect: { status: firing }
+    - fixture: nvidia-gdr-ready
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: ai.nvidia.peermem
+  title: Load nvidia-peermem for GPUDirect RDMA
+  kind: report
+  param: nvidia_peermem module
+  domain: ai
+  applies:
+    when: 'accelCount("nvidia") > 0 && len(facts.RDMA) > 0'
+  detect: '!module("nvidia_peermem")'
+  risk: low
+  rationale: >-
+    nvidia-peermem ships with the GPU driver and gives Mellanox InfiniBand HCAs direct peer access to GPU memory. It
+    is not loaded by default and no service loads it for you. It needs RDMA peer-memory support from MLNX_OFED (or a
+    patched kernel); if the GPU driver was installed before MLNX_OFED, reinstall the driver so the module is built
+    with those APIs. It replaces the off-tree nv_peer_mem module, which must be unloaded first. Hosts that do not
+    use GPUDirect RDMA (for example single-node serving) can ignore this report.
+  advice: >-
+    modprobe nvidia-peermem, and load it at boot with your distribution's module-load mechanism. Confirm with
+    NCCL_DEBUG=TRACE and look for GDRDMA in the transport lines.
+  verify: nvidia_peermem appears in /proc/modules; NCCL logs show NET/IB/GDRDMA
+  sources:
+    - https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
+    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+  tests:
+    - fixture: gpu-8xh100
+      expect: { status: firing }
+    - fixture: nvidia-gdr-ready
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: ai.nvidia.pcie-link-width
+  title: GPU PCIe link trained below its maximum width
+  kind: report
+  param: current_link_width
+  domain: ai
+  foreach: accel
+  filter: 'item.Vendor == "nvidia" && item.LinkWidthMax > 0'
+  detect: 'item.LinkWidth < item.LinkWidthMax'
+  risk: medium
+  rationale: >-
+    The kernel exposes each PCI device's trained and maximum link width as current_link_width and max_link_width. A
+    GPU running at a lower width than it supports (for example x8 on an x16 slot) has proportionally less host-to-GPU
+    bandwidth, which hurts model loading and CPU offload. NVIDIA's DCGM PCIe diagnostic is configured to require a
+    minimum width of 16 on H100 PCIe. Only width is compared: link speed can be lowered at idle by power management,
+    and no fetched source documents that, so speed is deliberately not evaluated. Not every platform wires every GPU
+    at full width, so confirm against the system's block diagram.
+  advice: >-
+    Reseat the card or riser, check BIOS bifurcation/slot settings and the slot wiring for {{.item.PCIAddr}}
+    (width {{.item.LinkWidth}} of {{.item.LinkWidthMax}}). Re-read current_link_width under load before acting.
+  verify: current_link_width equals max_link_width for the device
+  sources:
+    - https://raw.githubusercontent.com/torvalds/linux/master/drivers/pci/pci-sysfs.c
+    - https://docs.nvidia.com/datacenter/dcgm/latest/user-guide/dcgm-diagnostics.html
+  tests:
+    - fixture: gpu-8xh100
+      expect: { status: firing, target: "0000:ab:00.0" }
+    - fixture: gpu-8xh100
+      expect: { status: ok, target: "0000:18:00.0" }
+    - fixture: gpu-8xmi300x
+      expect: { status: not-applicable }
+
+- id: ai.nvidia.vllm-container-ipc
+  title: vLLM container needs host IPC or a larger shm
+  kind: runtime
+  param: docker run --ipc=host
+  domain: ai
+  foreach: app
+  filter: 'item.Name == "vllm" && item.Unit == ""'
+  applies:
+    when: 'accelCount("nvidia") > 0'
+  advice: >-
+    vLLM runs without a systemd service unit here, which is typical of a container or ad-hoc launch. If it is a
+    container, start it with --ipc=host (or at least --shm-size, the vLLM docs example uses 16G): vLLM uses PyTorch,
+    which shares tensors between processes through shared memory, particularly for tensor-parallel inference.
+    Docker's default /dev/shm is far smaller. With GPUDirect RDMA across nodes, also grant the IPC_LOCK capability
+    and mount /dev/shm.
+  risk: low
+  rationale: >-
+    The vLLM Docker guide says either --ipc=host or --shm-size must be given so the container can use the host's
+    shared memory, because vLLM relies on PyTorch shared memory between worker processes. --ipc=host shares the
+    host IPC namespace with the container, which reduces isolation. Fires only for a detected vLLM process with no
+    systemd unit, so the advice is not offered on service-managed installs.
+  verify: no shared-memory or bus errors from workers at tensor-parallel start-up
+  sources:
+    - https://docs.vllm.ai/en/stable/deployment/docker/
+    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+  tests:
+    - fixture: nvidia-vllm-docker
+      expect: { status: recommend }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }

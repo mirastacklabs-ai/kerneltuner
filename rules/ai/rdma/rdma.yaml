@@ -1,0 +1,86 @@
+- id: ai.rdma.memlock
+  title: Unlimited locked memory for RDMA inference/training apps
+  kind: limit
+  param: LimitMEMLOCK
+  domain: ai
+  foreach: app
+  filter: 'item.Name in ["vllm", "sglang", "tgi", "triton", "pytorch"]'
+  applies:
+    when: 'len(facts.RDMA) > 0'
+  recommend: '"unlimited"'
+  compare: gte
+  risk: low
+  rationale: >-
+    RDMA verbs and the collective libraries on top of them pin large amounts of memory per process. AMD's
+    networking guide documents that default memlock limits can be too small, with symptoms such as ib_write_bw
+    failing with "failed to create QP", collective tests hanging or segfaulting and device allocations failing, and
+    fixes it with memlock unlimited. The text is AMD's but describes generic RDMA verbs behaviour. systemd services
+    do not read limits.conf, so set LimitMEMLOCK on the unit. Raising it removes a safety cap on pinned memory.
+  verify: /proc/<pid>/limits shows Max locked memory unlimited for the app
+  sources: [https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html]
+  tests:
+    - fixture: gpu-8xh100
+      expect: { status: recommend, proposed: infinity, target: vllm.service }
+    - fixture: nvidia-gdr-ready
+      expect: { status: ok }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+
+- id: ai.rdma.roce-mtu
+  title: RoCE interface MTU below 9000
+  kind: report
+  param: mtu
+  domain: ai
+  foreach: rdma
+  filter: 'any(item.Ports, {.LinkLayer == "Ethernet"})'
+  detect: 'any(facts.NICs, {let n = #; any(item.Ports, {.LinkLayer == "Ethernet" && .NetDev == n.Name}) && n.MTU > 0 && n.MTU < 9000})'
+  risk: medium
+  rationale: >-
+    The default Ethernet MTU of 1500 is also the MTU of a RoCE interface unless changed. AMD's networking guide says
+    1500 limits performance because of aggressive segmentation, can show up as "Completion with error" on messages
+    larger than 1024 bytes, and recommends MTU 9000 on the host (it supports RDMA 4096 and TCP jumbo frames) with the
+    switch set to its maximum. Changing the host MTU alone breaks traffic if the switch path is not also raised,
+    hence a report, not an apply. InfiniBand ports are not checked.
+  advice: >-
+    Raise the MTU of the RoCE netdev (ip link set dev <ifname> mtu 9000, persisted in your network config) only
+    after the switch ports and every hop on the path allow at least 9000.
+  verify: ib_write_bw across the path completes with large messages; the netdev MTU reads 9000
+  sources: [https://instinct.docs.amd.com/projects/gpu-cluster-networking/en/latest/how-to/troubleshooting.html]
+  tests:
+    - fixture: rdma-roce-mtu
+      expect: { status: firing, target: mlx5_0 }
+    - fixture: rdma-roce-mtu
+      expect: { status: ok, target: mlx5_1 }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+
+- id: ai.rdma.nccl-hca-select
+  title: Restrict NCCL to the RDMA devices that are up
+  kind: runtime
+  param: NCCL_IB_HCA
+  domain: ai
+  applies:
+    when: 'len(facts.RDMA) > 1 && any(facts.RDMA, {any(.Ports, {!(.State contains "ACTIVE")})})'
+  advice: >-
+    Some RDMA ports are not ACTIVE. Set NCCL_IB_HCA in the launcher environment to the HCAs you intend to use
+    (comma-separated, optionally with :port; a leading ^ makes it an exclude list), so NCCL does not try a down
+    device. If the host has several IP networks, NCCL_SOCKET_IFNAME selects which interfaces NCCL uses for its
+    socket traffic (prefix list, = for exact match, ^ to exclude). Leave NCCL_NET_GDR_LEVEL unset unless you are
+    diagnosing: NCCL selects it from the topology when it is not specified. Current state:
+    {{range .facts.RDMA}}{{.Name}}{{range .Ports}}[{{.State}}] {{end}}{{end}}
+  risk: low
+  rationale: >-
+    NCCL documents NCCL_IB_HCA as a filter on which InfiniBand Verbs interfaces it uses, NCCL_SOCKET_IFNAME as a
+    filter on IP interfaces, and NCCL_NET_GDR_LEVEL as the maximum NIC-to-GPU topology distance at which GPUDirect
+    RDMA is used (formerly NCCL_IB_GDR_LEVEL), with automatic selection by default. These are launcher environment
+    variables, so kerneltuner only reports. Shown only when an RDMA port is down, which is when pinning the device
+    list is useful.
+  verify: NCCL_DEBUG=INFO lists only the intended NET/IB devices; NCCL_DEBUG=TRACE shows NET/IB/GDRDMA where expected
+  sources:
+    - https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html
+    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+  tests:
+    - fixture: rdma-port-down
+      expect: { status: recommend }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }

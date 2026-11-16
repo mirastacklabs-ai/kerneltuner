@@ -1,0 +1,8 @@
+description: "gpu-8xmi300x with RoCE netdevs visible: ens10f0np0 at MTU 1500, ens11f0np0 at MTU 9000"
+synthetic: true
+extends: gpu-8xmi300x
+files:
+  "sys/class/net/ens10f0np0/mtu": "1500\n"
+  "sys/class/net/ens10f0np0/device/numa_node": "0\n"
+  "sys/class/net/ens11f0np0/mtu": "9000\n"
+  "sys/class/net/ens11f0np0/device/numa_node": "0\n"
