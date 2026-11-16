@@ -138,10 +138,18 @@ The systemd unit for `agent` is hardened: `ProtectSystem=strict` and `NoNewPrivi
    - Intel
    - CPU inference
    - RDMA/NCCL
+   - **OSS app packs (added to v1).** Every rule is gated on the app being detected or declared (`--workload`).
+     - Databases: PostgreSQL, MySQL, MariaDB, Cassandra, ClickHouse
+     - Caches: Redis, Valkey, Memcached
+     - Messaging: Kafka, ZooKeeper, Pulsar, RabbitMQ, NATS
+     - Search: Elasticsearch, OpenSearch
+     - Web and proxy: nginx, HAProxy, Envoy, Apache httpd
+     - CNCF and node: Kubernetes node (kubelet), etcd, containerd, Cilium, CoreDNS, Prometheus, Fluent Bit
+     - MongoDB and ScyllaDB are excluded because their licenses are not OSI open source.
 4. **Metrics + evidence ranking + `capture`**.
 5. **`agent` + journald + `status` + systemd unit**.
 6. **`apply` / `rollback`**, covering only sysctl/sysfs/limits. Boot-parameter and runtime rules are never applied, only generated.
-7. **Later**: more app packs (Postgres, Kafka, Elasticsearch, MySQL, JVM), a contributor guide, a Prometheus exporter.
+7. **Later**: more app packs on request, a Prometheus exporter.
 
 
 ## Verification
