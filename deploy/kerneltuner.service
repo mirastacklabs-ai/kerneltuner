@@ -38,6 +38,7 @@ RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
 
 # CAP_DAC_READ_SEARCH: read files other users own (per-process limits and
 #   cgroup, oom_score_adj) that the unprivileged user could not open.
