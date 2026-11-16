@@ -23,7 +23,7 @@ func fakeRoot(t *testing.T) string {
 	return dir
 }
 
-func run(t *testing.T, args ...string) (string, error) {
+func runApplyCLI(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	cmd := NewRootCmd()
 	var out bytes.Buffer
@@ -39,14 +39,14 @@ func TestApplyRefusals(t *testing.T) {
 	geteuid = func() int { return 1000 }
 	t.Cleanup(func() { geteuid = old })
 
-	if _, err := run(t, "apply", "--yes"); err == nil || !strings.Contains(err.Error(), "refusing") {
+	if _, err := runApplyCLI(t, "apply", "--yes"); err == nil || !strings.Contains(err.Error(), "refusing") {
 		t.Fatalf("non-root without --root: %v", err)
 	}
 	root := fakeRoot(t)
-	if _, err := run(t, "--root", root, "apply"); err == nil || !strings.Contains(err.Error(), "--yes") {
+	if _, err := runApplyCLI(t, "--root", root, "apply"); err == nil || !strings.Contains(err.Error(), "--yes") {
 		t.Fatalf("without --yes: %v", err)
 	}
-	if _, err := run(t, "--root", root, "rollback", "--yes"); err == nil || !strings.Contains(err.Error(), "no snapshots") {
+	if _, err := runApplyCLI(t, "--root", root, "rollback", "--yes"); err == nil || !strings.Contains(err.Error(), "no snapshots") {
 		t.Fatalf("rollback latest with none: %v", err)
 	}
 }
@@ -81,10 +81,10 @@ func TestApplyRollbackEndToEnd(t *testing.T) {
 		t.Fatalf("not applied: %q", b)
 	}
 
-	if o, err := run(t, "--root", root, "rollback", "--list"); err != nil || !strings.Contains(o, "1 live value") {
+	if o, err := runApplyCLI(t, "--root", root, "rollback", "--list"); err != nil || !strings.Contains(o, "1 live value") {
 		t.Fatalf("list: %q %v", o, err)
 	}
-	if o, err := run(t, "--root", root, "rollback", "--yes"); err != nil || !strings.Contains(o, "rolled back") {
+	if o, err := runApplyCLI(t, "--root", root, "rollback", "--yes"); err != nil || !strings.Contains(o, "rolled back") {
 		t.Fatalf("rollback: %q %v", o, err)
 	}
 	if b, _ := os.ReadFile(live); string(b) != "128\n" {
