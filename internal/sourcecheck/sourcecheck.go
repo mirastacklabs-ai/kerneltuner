@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -28,8 +29,12 @@ const (
 	OK           Status = "OK"
 	QuoteMissing Status = "QUOTE-MISSING"
 	Redirected   Status = "REDIRECTED"
-	HTTPError    Status = "HTTP-ERROR"
-	Unreachable  Status = "UNREACHABLE"
+	// SameSiteMoved is a warning, not a failure: the URL redirected to
+	// another path on the same host (e.g. /latest/x to /v3.7/x) and every
+	// quote was found on the final page.
+	SameSiteMoved Status = "WARN-MOVED"
+	HTTPError     Status = "HTTP-ERROR"
+	Unreachable   Status = "UNREACHABLE"
 )
 
 // Defaults of Options.
@@ -52,13 +57,14 @@ type Result struct {
 	Pack       string   `json:"pack,omitempty"`
 	Status     Status   `json:"status"`
 	HTTPStatus int      `json:"http_status,omitempty"`
-	FinalURL   string   `json:"final_url,omitempty"` // set when REDIRECTED
+	FinalURL   string   `json:"final_url,omitempty"` // set when REDIRECTED or WARN-MOVED
 	Missing    []string `json:"missing_quotes,omitempty"`
 	Error      string   `json:"error,omitempty"`
 }
 
-// Failed reports whether the result is anything but OK.
-func (r Result) Failed() bool { return r.Status != OK }
+// Failed reports whether the result is a failure: anything but OK or a
+// same-site move warning.
+func (r Result) Failed() bool { return r.Status != OK && r.Status != SameSiteMoved }
 
 // Options configures Check. The zero value gives the defaults.
 type Options struct {
@@ -66,6 +72,25 @@ type Options struct {
 	Timeout     time.Duration // per request; default 15s
 	Concurrency int           // default 4
 	UserAgent   string        // default "kerneltuner-sources-check/dev"
+	// AllowHTTP permits http:// URLs and https-to-http redirects. For tests
+	// against local servers only; the CLI never sets it.
+	AllowHTTP bool
+}
+
+// MaxRedirects is the most redirects one check follows.
+const MaxRedirects = 5
+
+// redirectPolicy caps redirects and refuses an https to http downgrade.
+func redirectPolicy(allowHTTP bool) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) > MaxRedirects {
+			return fmt.Errorf("stopped after %d redirects", MaxRedirects)
+		}
+		if !allowHTTP && req.URL.Scheme != "https" {
+			return fmt.Errorf("refusing redirect to non-https URL %s", req.URL)
+		}
+		return nil
+	}
 }
 
 // Check fetches every item and classifies it. Results are in the order of
@@ -80,10 +105,12 @@ func Check(ctx context.Context, items []Item, o Options) []Result {
 	if o.UserAgent == "" {
 		o.UserAgent = "kerneltuner-sources-check/dev"
 	}
-	client := o.Client
-	if client == nil {
-		client = &http.Client{}
+	client := &http.Client{}
+	if o.Client != nil {
+		c := *o.Client // copy: never mutate the caller's client
+		client = &c
 	}
+	client.CheckRedirect = redirectPolicy(o.AllowHTTP)
 	out := make([]Result, len(items))
 	sem := make(chan struct{}, o.Concurrency)
 	var wg sync.WaitGroup
@@ -102,6 +129,10 @@ func Check(ctx context.Context, items []Item, o Options) []Result {
 
 func checkOne(ctx context.Context, client *http.Client, it Item, o Options) Result {
 	res := Result{URL: it.URL, Pack: it.Pack}
+	if u, err := url.Parse(it.URL); err != nil || (u.Scheme != "https" && (!o.AllowHTTP || u.Scheme != "http")) {
+		res.Status, res.Error = Unreachable, "only https URLs are checked"
+		return res
+	}
 	ctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, it.URL, nil)
@@ -121,26 +152,68 @@ func checkOne(ctx context.Context, client *http.Client, it Item, o Options) Resu
 		res.Status, res.Error = HTTPError, resp.Status
 		return res
 	}
+	moved := false
 	if final := resp.Request.URL; movedAway(it.URL, final) {
-		res.Status, res.FinalURL = Redirected, final.String()
-		return res
+		res.FinalURL = final.String()
+		if !sameSite(it.URL, final) {
+			res.Status = Redirected
+			return res
+		}
+		moved = true
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		res.Status, res.Error = Unreachable, err.Error()
 		return res
 	}
-	text := Normalize(HTMLToText(string(body)))
+	text, alt := string(body), ""
+	if isHTML(resp.Header.Get("Content-Type"), body) {
+		text = HTMLToText(text)
+	} else {
+		// A quote from a block comment spans lines that each start with " * ".
+		alt = Normalize(stripCommentLeaders(text))
+	}
+	text = Normalize(text)
 	for _, q := range it.Quotes {
-		if nq := Normalize(q); nq != "" && !strings.Contains(text, nq) {
+		if nq := Normalize(q); nq != "" && !strings.Contains(text, nq) && (alt == "" || !strings.Contains(alt, nq)) {
 			res.Missing = append(res.Missing, q)
 		}
 	}
 	res.Status = OK
-	if len(res.Missing) > 0 {
+	switch {
+	case len(res.Missing) > 0:
 		res.Status = QuoteMissing
+	case moved:
+		res.Status = SameSiteMoved
 	}
 	return res
+}
+
+// isHTML reports whether a body is HTML: by Content-Type, or, when the type is
+// absent or generic, because it starts like an HTML document. text/plain and
+// every other type is compared raw (source files, man pages, rst, yaml), so
+// text such as "<num>" or "#include <x>" is not mistaken for markup.
+func isHTML(contentType string, body []byte) bool {
+	mt, _, _ := mime.ParseMediaType(contentType)
+	switch mt {
+	case "text/html", "application/xhtml+xml":
+		return true
+	case "", "application/octet-stream":
+		head := strings.ToLower(strings.TrimSpace(string(body[:min(len(body), 1024)])))
+		return strings.HasPrefix(head, "<!doctype html") || strings.HasPrefix(head, "<html")
+	}
+	return false
+}
+
+// sameSite reports whether a redirect stayed on the same host (a leading
+// "www." is ignored; a different port is a different site).
+func sameSite(orig string, final *url.URL) bool {
+	o, err := url.Parse(orig)
+	if err != nil {
+		return false
+	}
+	host := func(h string) string { return strings.TrimPrefix(strings.ToLower(h), "www.") }
+	return host(o.Host) == host(final.Host)
 }
 
 // movedAway reports whether following redirects from orig ended on another
@@ -171,6 +244,13 @@ func HTMLToText(s string) string {
 	s = reTags.ReplaceAllString(s, "")
 	return html.UnescapeString(s)
 }
+
+var reLeader = regexp.MustCompile(`(?m)^[ \t]*\*+[ \t]?`)
+
+// stripCommentLeaders drops the " * " that starts each line of a C block
+// comment, so a quote spanning several comment lines can be matched in raw
+// source files. It is only tried in addition to the plain comparison.
+func stripCommentLeaders(s string) string { return reLeader.ReplaceAllString(s, "") }
 
 var punct = strings.NewReplacer(
 	"\u2018", "'", "\u2019", "'", "\u201c", "\"", "\u201d", "\"",

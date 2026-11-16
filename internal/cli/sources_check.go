@@ -16,6 +16,9 @@ import (
 // sourcesHTTPClient is the client `sources --check` uses; tests replace it.
 var sourcesHTTPClient *http.Client
 
+// sourcesAllowHTTP lets tests check local http:// servers; never set in production.
+var sourcesAllowHTTP bool
+
 // runSourcesCheck implements `sources --check`: it fetches every registered
 // URL (optionally only those of one pack) and verifies the quotes rules cite
 // from it. It needs no host facts and sends none. Exit code 1 if any fails.
@@ -52,6 +55,7 @@ func runSourcesCheck(cmd *cobra.Command, g *globalOpts, only string) error {
 
 	results := sourcecheck.Check(cmdContext(cmd), items, sourcecheck.Options{
 		Client:    sourcesHTTPClient,
+		AllowHTTP: sourcesAllowHTTP,
 		UserAgent: "kerneltuner-sources-check/" + Version,
 	})
 	failed := 0
@@ -74,7 +78,7 @@ func runSourcesCheck(cmd *cobra.Command, g *globalOpts, only string) error {
 		for _, r := range results {
 			line := fmt.Sprintf("%-13s %s", r.Status, r.URL)
 			switch r.Status {
-			case sourcecheck.Redirected:
+			case sourcecheck.Redirected, sourcecheck.SameSiteMoved:
 				line += " -> " + r.FinalURL
 			case sourcecheck.HTTPError, sourcecheck.Unreachable:
 				line += "  (" + r.Error + ")"

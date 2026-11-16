@@ -56,7 +56,7 @@ jobs:
           {
             echo "\`kerneltuner sources --check\` found drift in the registered upstream docs (${RUN_URL})."
             echo
-            echo "A source is REDIRECTED, unreachable, an HTTP error, or no longer contains a quote a rule cites. Re-read the page, then fix the rule's quote or the registry URL, and bump \`last_reviewed\`."
+            echo "A source is REDIRECTED to another host, unreachable, an HTTP error, or no longer contains a quote a rule cites. Re-read the page, then fix the rule's quote or the registry URL, and bump \`last_reviewed\`."
             echo
             echo '```'
             grep -v '^OK ' sources-report.txt | head -c 60000
