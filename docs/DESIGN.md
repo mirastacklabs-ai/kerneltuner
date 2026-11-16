@@ -201,6 +201,11 @@ type Input struct { Facts *facts.Facts; Workload *workload.Workload; Values, Rat
 - If the param is in the active tuned profile's set, status is `managed`, and the report shows tuned's value.
 - If bpftune is running and the param is in its list, status is `managed`, with the warning "writing this sysctl disables the bpftune tuner".
 
+### `limit` kind convention (amended, wave 2)
+- `param` is `LimitNOFILE` or `LimitMEMLOCK`. The apply side accepts these case-insensitively, with or without the `Limit` prefix.
+- Limit rules use `foreach: app`. The advisor sets `Target` to the app's systemd unit (`App.Unit`) when it is known, and otherwise to the app name. When there is no unit, the generate output falls back to limits.d, and apply skips the rule with a reason.
+- `Current` is the soft limit, with `unlimited` for MaxUint64. `Proposed` is a number or `infinity`.
+
 ## Fixtures
 `testdata/fixtures/<name>/fixture.yaml`:
 ```yaml
