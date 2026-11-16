@@ -1,0 +1,9 @@
+description: "web-16c-64g-nginx under sustained memory pressure: PSI memory some 24 / full 6, direct reclaim and early kswapd wakeups"
+synthetic: true
+extends: web-16c-64g-nginx
+values:
+  "psi.memory.some.avg10": 24
+  "psi.memory.full.avg10": 6
+rates:
+  "vmstat.allocstall_normal": 40
+  "vmstat.kswapd_low_wmark_hit_quickly": 12

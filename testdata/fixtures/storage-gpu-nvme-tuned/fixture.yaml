@@ -1,0 +1,5 @@
+description: "gpu-8xh100 where nvme0n1 already has read_ahead_kb=4096 (the other NVMe disks keep 128)"
+synthetic: true
+extends: gpu-8xh100
+files:
+  "sys/block/nvme0n1/queue/read_ahead_kb": "4096\n"

@@ -1,0 +1,12 @@
+description: "legacy-4.9-c10k (HAProxy, intel_idle) with cpuidle states POLL, C1, C1E and C6 exposed on cpu0"
+synthetic: true
+extends: legacy-4.9-c10k
+files:
+  "sys/devices/system/cpu/cpu0/cpuidle/state0/name": "POLL\n"
+  "sys/devices/system/cpu/cpu0/cpuidle/state0/latency": "0\n"
+  "sys/devices/system/cpu/cpu0/cpuidle/state1/name": "C1\n"
+  "sys/devices/system/cpu/cpu0/cpuidle/state1/latency": "2\n"
+  "sys/devices/system/cpu/cpu0/cpuidle/state2/name": "C1E\n"
+  "sys/devices/system/cpu/cpu0/cpuidle/state2/latency": "10\n"
+  "sys/devices/system/cpu/cpu0/cpuidle/state3/name": "C6\n"
+  "sys/devices/system/cpu/cpu0/cpuidle/state3/latency": "133\n"

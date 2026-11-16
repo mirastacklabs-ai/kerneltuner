@@ -1,0 +1,155 @@
+- id: cpu.governor.performance
+  title: CPU frequency governor on an inference host
+  kind: runtime
+  domain: cpu
+  applies:
+    when: >-
+      facts.CPU.Governor != "" && facts.CPU.Governor != "performance" &&
+      (hasApp("vllm") || hasApp("sglang") || hasApp("tgi") || hasApp("triton") ||
+       hasApp("llama.cpp") || hasApp("ollama") || hasApp("pytorch"))
+  risk: low
+  rationale: >-
+    The performance governor requests the highest frequency within scaling_max_freq; powersave requests the lowest, and
+    schedutil follows utilisation. A model server whose throughput or tail latency matters can lose time to frequency
+    ramp-up, at the cost of higher idle power and heat. On intel_pstate with HWP, performance also writes EPP 0 and
+    rejects any other EPP set via sysfs; with HWP + powersave the EPP hint is honoured, so the gain from changing the
+    governor is smaller on hardware-managed (HWP/EPP) systems. amd-pstate works with the same generic governors.
+    The benefit is workload-dependent; this pack has no measured number for it.
+  advice: >-
+    Currently: governor {{.facts.CPU.Governor}}, driver {{.facts.CPU.ScalingDriver}}, EPP "{{.facts.CPU.EPP}}".
+    Try, on every CPU: `echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`
+    (persist through tuned `governor=performance` or a boot-time unit; it does not survive reboot). Trade-off: higher
+    idle power and thermals, less turbo headroom on power-capped parts. Skip it on power-constrained or shared hosts;
+    compare tokens/s and p99 before and after.
+  verify: "scaling_cur_freq tracks cpuinfo_max_freq under load; throughput or p99 latency improves enough to justify the power"
+  sources:
+    - https://docs.kernel.org/admin-guide/pm/cpufreq.html
+    - https://docs.kernel.org/admin-guide/pm/intel_pstate.html
+    - https://docs.kernel.org/admin-guide/pm/amd-pstate.html
+  tests:
+    - fixture: cpu-amx-2s
+      expect: { status: recommend }
+    - fixture: gpu-8xmi300x
+      expect: { status: recommend }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+
+- id: cpu.cstate.dma_latency
+  title: Deep C-state wakeup jitter for latency-critical services
+  kind: runtime
+  domain: cpu
+  applies:
+    when: >-
+      !facts.Host.Container && facts.CPU.IdleDriver != "" &&
+      exists("/sys/devices/system/cpu/cpu0/cpuidle/state2") &&
+      (hasApp("redis") || hasApp("valkey") || hasApp("haproxy") || hasApp("envoy"))
+  risk: medium
+  rationale: >-
+    Idle states deeper than C1 have exit latencies that show up as wakeup jitter in request/response services.
+    A process can cap the CPU latency globally at runtime, without a reboot, by holding /dev/cpu_dma_latency open
+    and writing a latency limit in microseconds; idle governors must not choose states whose exit latency exceeds the
+    lowest active request, and the request disappears when the file descriptor is closed. The boot-time alternative
+    intel_idle.max_cstate is not advised here because the docs conflict: kernel-parameters says 0 falls back to
+    acpi_idle, while the intel_idle doc says 0 makes intel_idle initialisation fail. Cost: the CPUs stay out of deep
+    idle, so idle power rises and turbo headroom on the other cores shrinks.
+  advice: >-
+    Idle driver {{.facts.CPU.IdleDriver}}. Have a small supervisor (or the service itself) open /dev/cpu_dma_latency,
+    write the maximum exit latency you accept in microseconds (0 allows only the shallowest states), and keep the
+    descriptor open for as long as the limit should apply; closing it removes the limit. Measure p99.9 latency and
+    package power before keeping it. Per-state control also exists in cpuN/cpuidle/stateM/disable.
+  verify: "wakeup-latency p99.9 drops; /sys/devices/system/cpu/cpu*/cpuidle/state*/usage stops growing for the deep states"
+  sources:
+    - https://docs.kernel.org/admin-guide/pm/cpuidle.html
+    - https://docs.kernel.org/power/pm_qos_interface.html
+    - https://docs.kernel.org/admin-guide/pm/intel_idle.html
+    - https://docs.kernel.org/admin-guide/kernel-parameters.html
+  tests:
+    - fixture: cpu-haproxy-deep-cstates
+      expect: { status: recommend }
+    - fixture: legacy-4.9-c10k
+      expect: { status: not-applicable }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+
+- id: cpu.smt.state
+  title: SMT state on a CPU-inference host
+  kind: report
+  domain: cpu
+  detect: 'facts.CPU.SMTActive && accelCount("") == 0 && (hasApp("llama.cpp") || hasApp("ollama"))'
+  risk: low
+  rationale: >-
+    /sys/devices/system/cpu/smt/active says whether SMT siblings are online and smt/control can switch it at runtime
+    (on, off, N threads per core; forceoff and notsupported cannot be changed). Whether SMT helps or hurts a
+    compute-bound inference process depends on the workload and thread count; none of this pack's sources claims a
+    speedup either way, so this is a state report, not a recommendation. SMT is also a lever for some CPU
+    vulnerability mitigations (nosmt), which is a security decision.
+  advice: >-
+    SMT is active with {{.facts.CPU.Threads}} logical CPUs on {{.facts.CPU.Cores}} cores (control: {{.facts.CPU.SMTControl}}).
+    To test, pin the thread count to physical cores in the inference runtime first; switching SMT off halves the
+    logical CPUs (`echo off | sudo tee /sys/devices/system/cpu/smt/control`, reversible with `on` unless the control
+    file reads forceoff). Keep it on if your security policy relies on it being on, and keep it off if it relies on off.
+  verify: "compare throughput and p99 with SMT on and off under the same thread-pinning"
+  sources:
+    - https://docs.kernel.org/admin-guide/abi-testing.html
+  tests:
+    - fixture: cpu-amx-2s
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: cpu.isolation.boot_params
+  title: CPU isolation boot parameters in use
+  kind: report
+  domain: cpu
+  detect: '"isolcpus" in facts.Kernel.CmdlineArgs || "nohz_full" in facts.Kernel.CmdlineArgs'
+  risk: medium
+  rationale: >-
+    isolcpus, nohz_full and rcu_nocbs take CPUs out of the general scheduler or stop their tick, which suits realtime
+    and certain HPC jobs and costs general capacity. isolcpus defaults to the `domain` flag, which is irreversible
+    without a reboot (the doc points to cpusets for dynamic isolation); the `nohz` flag equals nohz_full, its residual
+    1 Hz tick must be moved to housekeeping CPUs through the workqueue cpumask, and the doc says to leave at least one
+    non-adaptive-tick CPU. The no_hz doc advises against NO_HZ_FULL unless you run realtime or certain HPC workloads.
+    kerneltuner never recommends these parameters on its own; it reports them when an operator already set them.
+  advice: >-
+    Command line: isolcpus={{index .facts.Kernel.CmdlineArgs "isolcpus"}} nohz_full={{index .facts.Kernel.CmdlineArgs "nohz_full"}}.
+    Confirm the isolated CPUs are really used by pinned work, that IRQs and kernel threads stay on housekeeping CPUs
+    (managed_irq flag, /proc/irq/*/smp_affinity_list, workqueue cpumask), and prefer cgroup cpusets where you need to
+    change the layout without rebooting.
+  verify: "isolated CPUs show no unexpected interrupts or tick activity under load; housekeeping CPUs are not saturated"
+  sources:
+    - https://docs.kernel.org/admin-guide/kernel-parameters.html
+    - https://docs.kernel.org/timers/no_hz.html
+  tests:
+    - fixture: cpu-isolcpus-nohz
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: cpu.vuln.mitigations_off
+  title: CPU vulnerability mitigations disabled on the kernel command line
+  kind: report
+  domain: cpu
+  detect: 'facts.Kernel.CmdlineArgs["mitigations"] == "off"'
+  risk: high
+  rationale: >-
+    mitigations=off disables all optional CPU mitigations; the kernel parameter doc says this "improves system
+    performance, but it may also expose users to several CPU vulnerabilities", and it works only on kernels built with
+    CPU_MITIGATIONS=y. The per-vulnerability state is exposed under /sys/devices/system/cpu/vulnerabilities/*
+    ("Not affected", "Vulnerable" or "Mitigation: ..."). kerneltuner reports this state and never recommends turning
+    mitigations off.
+  advice: >-
+    Inspect `grep . /sys/devices/system/cpu/vulnerabilities/*` and decide with your security owner. This is only
+    acceptable on hosts that run exclusively trusted code and are isolated from untrusted tenants; remove
+    mitigations=off otherwise.
+  verify: "files under /sys/devices/system/cpu/vulnerabilities/ read Mitigation or Not affected, not Vulnerable"
+  sources:
+    - https://docs.kernel.org/admin-guide/kernel-parameters.html
+    - https://docs.kernel.org/admin-guide/hw-vuln/index.html
+    - https://docs.kernel.org/admin-guide/abi-testing.html
+  tests:
+    - fixture: cpu-mitigations-off
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }

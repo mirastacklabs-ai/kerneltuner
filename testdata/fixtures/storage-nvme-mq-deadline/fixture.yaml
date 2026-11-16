@@ -1,0 +1,9 @@
+description: "web-16c-64g-nginx whose NVMe disk runs mq-deadline (distro udev rule) plus a SATA disk with the same scheduler"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "sys/block/nvme0n1/queue/scheduler": "none [mq-deadline] kyber bfq\n"
+  "sys/block/sda/queue/nr_requests": "64\n"
+  "sys/block/sda/queue/read_ahead_kb": "128\n"
+  "sys/block/sda/queue/rotational": "1\n"
+  "sys/block/sda/queue/scheduler": "none [mq-deadline] kyber bfq\n"
