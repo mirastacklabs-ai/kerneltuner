@@ -1,0 +1,65 @@
+- id: app.vllm.container-shm
+  title: vLLM outside systemd needs --ipc=host or --shm-size when containerized
+  kind: runtime
+  param: --ipc=host
+  domain: ai
+  foreach: app
+  filter: 'item.Name == "vllm" && item.Unit == ""'
+  risk: low
+  rationale: >-
+    vLLM's official Docker docs say to use either the ipc=host flag or the --shm-size flag so the container can
+    use the host's shared memory, because vLLM uses PyTorch, which shares data between processes through shared
+    memory, particularly for tensor parallel inference. kerneltuner only sees a vLLM process that is not a systemd
+    service (typical for docker/podman or a manual start); it cannot see the container's IPC settings, so this is
+    advice, not a detected fault. A native systemd service shares the host's /dev/shm and is not flagged.
+  advice: >-
+    If this vLLM runs in a container, start it with `--ipc=host` or with a sufficient `--shm-size`. The official
+    docker example is `docker run --runtime nvidia --gpus all ... --ipc=host vllm/vllm-openai:latest ...`; the
+    GPUDirect RDMA example uses `--ipc=host --shm-size=16G -v /dev/shm:/dev/shm`.
+    {{- if .facts.RDMA}} This host has RDMA devices: for GPUDirect RDMA vLLM's docs also say to add the IPC_LOCK
+    capability (Docker: `--cap-add=IPC_LOCK`) and to mount /dev/shm.{{end}} If vLLM already runs with one of
+    these, ignore this finding.
+  verify: "docker inspect shows HostConfig.IpcMode=host or a large ShmSize for the vLLM container"
+  sources:
+    - https://docs.vllm.ai/en/stable/deployment/docker/
+    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+  tests:
+    - fixture: vllm-docker
+      expect: { status: recommend }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+    - fixture: gpu-8xmi300x
+      expect: { status: not-applicable }
+
+- id: app.vllm.ipc-lock
+  title: vLLM service cannot lock memory for GPUDirect RDMA
+  kind: limit
+  param: LimitMEMLOCK
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "vllm" && item.Unit != "" && len(facts.RDMA) > 0'
+  recommend: '"infinity"'
+  compare: gte
+  risk: medium
+  rationale: >-
+    vLLM's GPUDirect RDMA setup says to give the container the IPC_LOCK capability so it can lock memory pages and
+    prevent swapping. For a native systemd service the equivalent is lifting RLIMIT_MEMLOCK (mlock(2): an
+    unprivileged process is limited by it, a process with CAP_IPC_LOCK is not, since Linux 2.6.9) or granting
+    CAP_IPC_LOCK. The rule only applies when the host has RDMA devices, because vLLM documents the requirement for
+    GPUDirect RDMA specifically; it may duplicate a vendor-level memlock rule (ai.nvidia/ai.amd) for the same unit.
+  advice: >-
+    Add `LimitMEMLOCK=infinity` (or `AmbientCapabilities=CAP_IPC_LOCK`) to the vLLM unit if multi-node
+    inference uses GPUDirect RDMA, then restart the unit. This is the bare-service counterpart of the IPC_LOCK
+    container capability in vLLM's docs.
+  verify: "grep 'locked memory' /proc/<pid>/limits shows unlimited; NCCL_DEBUG=TRACE log shows [send] via NET/IB/GDRDMA"
+  namespaced: false
+  sources:
+    - https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+    - https://man7.org/linux/man-pages/man2/mlock.2.html
+  tests:
+    - fixture: gpu-8xh100
+      expect: { status: recommend, proposed: infinity, target: vllm.service }
+    - fixture: vllm-ipc-lock-ok
+      expect: { status: ok, target: vllm.service }
+    - fixture: vllm-docker
+      expect: { status: not-applicable }

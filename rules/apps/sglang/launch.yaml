@@ -1,0 +1,29 @@
+- id: app.sglang.container-shm
+  title: SGLang on AMD GPUs outside systemd needs --ipc=host and --shm-size when containerized
+  kind: runtime
+  param: --ipc=host
+  domain: ai
+  foreach: app
+  filter: 'item.Name == "sglang" && item.Unit == ""'
+  applies:
+    when: 'accelCount("amd") > 0'
+  risk: low
+  rationale: >-
+    SGLang's AMD GPU documentation uses `--ipc=host` in its container examples, with `--shm-size 16g` in the
+    docker run examples. The page gives no rationale for the flags. It is the only SGLang page verified for this rule, so the rule is
+    limited to AMD hosts; NVIDIA-side SGLang container flags were not verified. kerneltuner only sees an SGLang
+    process that is not a systemd service (typical for docker/podman), and cannot see the container's IPC settings,
+    so this is advice, not a detected fault.
+  advice: >-
+    If this SGLang runs in a container, mirror the documented examples: `--ipc=host --shm-size 16g` (together with
+    the device and group flags from the AMD page). If the container already uses them, ignore this finding.
+  verify: "docker inspect shows HostConfig.IpcMode=host and a ShmSize of at least 16g for the SGLang container"
+  sources:
+    - https://docs.sglang.io/docs/hardware-platforms/amd_gpu.md
+  tests:
+    - fixture: sglang-docker
+      expect: { status: recommend }
+    - fixture: gpu-8xmi300x
+      expect: { status: not-applicable }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }

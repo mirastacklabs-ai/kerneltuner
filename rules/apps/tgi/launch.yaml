@@ -1,0 +1,25 @@
+- id: app.tgi.container-shm
+  title: TGI outside systemd should be started with --shm-size when containerized
+  kind: runtime
+  param: --shm-size
+  domain: ai
+  foreach: app
+  filter: 'item.Name == "tgi" && item.Unit == ""'
+  risk: low
+  rationale: >-
+    The official TGI quick tour launches the container as `docker run --gpus all --shm-size 1g -p 8080:80 ...`.
+    The page gives no rationale for the flag, so this rule only reports that documented launch line; it does not
+    claim a failure mode or a size for large multi-GPU models. kerneltuner only sees a TGI process that is not a
+    systemd service (typical for docker/podman) and cannot see the container's shared-memory size, so this is
+    advice, not a detected fault.
+  advice: >-
+    If this TGI runs in a container, include a `--shm-size` as in the official example (`--shm-size 1g`). If your
+    container already sets one, ignore this finding.
+  verify: "docker inspect shows a non-default HostConfig.ShmSize for the TGI container"
+  sources:
+    - https://huggingface.co/docs/text-generation-inference/quicktour
+  tests:
+    - fixture: tgi-docker
+      expect: { status: recommend }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }

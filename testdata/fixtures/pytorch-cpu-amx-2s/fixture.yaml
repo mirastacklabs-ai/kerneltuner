@@ -1,0 +1,7 @@
+description: "cpu-amx-2s (2-socket Sapphire Rapids, kernel 6.5, no GPU) running a CPU PyTorch job under torchrun instead of llama-server"
+synthetic: true
+extends: cpu-amx-2s
+files:
+  "proc/2210/comm": "torchrun\n"
+  "proc/2210/cmdline": "/usr/bin/python3\u0000/usr/local/bin/torchrun\u0000--nproc_per_node=1\u0000serve_cpu.py\u0000"
+  "proc/2210/cgroup": "0::/system.slice/torch-infer.service\n"

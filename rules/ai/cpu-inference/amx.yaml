@@ -1,0 +1,65 @@
+- id: ai.cpu.amx-kernel
+  title: AMX reported by the CPU on a kernel older than 5.16
+  kind: report
+  param: amx
+  domain: ai
+  applies:
+    when: 'facts.Kernel.Major > 0 && (hasApp("llama.cpp") || hasApp("pytorch") || hasApp("ollama")) && accelCount("") == 0'
+  detect: 'cpuFlag("amx_tile") && !kver(">=5.16")'
+  risk: low
+  rationale: >-
+    Intel AMX support was added to the upstream kernel in Linux 5.16 (Jan 2022): the TILE registers need a large
+    XSTATE buffer that the kernel allocates only after a process asks for it through arch_prctl. Without that
+    kernel support, userspace libraries cannot use AMX tiles. Vendor kernels may backport it (the flag appears in
+    /proc/cpuinfo when the kernel knows the feature), so this is a prompt to verify, not proof of a fault.
+  advice: >-
+    The CPU reports amx_tile but the running kernel ({{.facts.Kernel.Release}}) is older than the upstream 5.16
+    that introduced AMX. Confirm that the distribution kernel backports AMX (the process must be able to request
+    XCOMP_PERM for TILE_DATA), or move to a kernel >= 5.16. Until then CPU inference will fall back to
+    AVX-512 paths.
+  verify: "kernel >= 5.16 (or a confirmed AMX backport) and amx_tile present in /proc/cpuinfo flags"
+  sources:
+    - https://kernelnewbies.org/Linux_5.16
+    - https://docs.kernel.org/arch/x86/xstate.html
+    - https://raw.githubusercontent.com/torvalds/linux/master/arch/x86/include/asm/cpufeatures.h
+  tests:
+    - fixture: cpu-inference-amx-oldkernel
+      expect: { status: firing }
+    - fixture: cpu-amx-2s
+      expect: { status: ok }
+    - fixture: gpu-8xh100
+      expect: { status: not-applicable }
+
+- id: ai.cpu.onednn-isa
+  title: Let oneDNN/OpenVINO use AMX (do not cap the ISA)
+  kind: runtime
+  param: ONEDNN_MAX_CPU_ISA
+  domain: ai
+  applies:
+    kernel: ">=5.16"
+    when: 'cpuFlag("amx_tile") && cpuFlag("amx_bf16") && hasApp("pytorch") && accelCount("") == 0'
+  risk: low
+  rationale: >-
+    The CPU and kernel (>= 5.16, the release that added AMX) both support AMX, and oneDNN dispatches to the best
+    ISA the CPU supports unless ONEDNN_MAX_CPU_ISA restricts it (value DEFAULT means no restriction). A leftover
+    cap such as AVX512_CORE silently disables AMX kernels. OpenVINO documents that bf16/f16 inference precision
+    is what enables AMX on 4th-gen and newer Xeon.
+  advice: >-
+    This host has amx_tile and amx_bf16 on kernel {{.facts.Kernel.Release}}. For oneDNN-based CPU inference
+    (PyTorch CPU, OpenVINO) leave ONEDNN_MAX_CPU_ISA unset; if you must cap it, cap no lower than AVX512_CORE_AMX.
+    Check that no wrapper script or container image exports a lower value. For OpenVINO, run the model in bf16 (or
+    f16) inference precision, which is what lets it use AMX instead of AVX-512 or AVX2; bf16 can change LLM
+    accuracy, so validate output quality. The PyTorch tuning guide does not mention AMX, so this part of the advice
+    comes from the oneDNN and OpenVINO documentation.
+  verify: "OpenVINO per-layer performance counters list brgemm_avx512_amx execution types; amx_tile still present in /proc/cpuinfo"
+  sources:
+    - https://uxlfoundation.github.io/oneDNN/dev_guide_cpu_dispatcher_control.html
+    - https://docs.openvino.ai/2025/openvino-workflow/running-inference/inference-devices-and-modes/cpu-device.html
+    - https://kernelnewbies.org/Linux_5.16
+  tests:
+    - fixture: pytorch-cpu-amx-2s
+      expect: { status: recommend }
+    - fixture: cpu-amx-2s
+      expect: { status: not-applicable }
+    - fixture: cpu-inference-amx-oldkernel
+      expect: { status: not-applicable }

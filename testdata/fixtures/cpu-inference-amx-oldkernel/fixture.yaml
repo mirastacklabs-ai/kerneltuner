@@ -1,0 +1,6 @@
+description: "cpu-amx-2s with a 5.4 kernel that still reports AMX flags (as a vendor backport kernel would), llama-server running"
+synthetic: true
+extends: cpu-amx-2s
+files:
+  "proc/sys/kernel/osrelease": "5.4.0-186-generic\n"
+  "proc/cmdline": "BOOT_IMAGE=/boot/vmlinuz-5.4.0-186-generic root=/dev/nvme0n1p2 ro quiet splash\n"
