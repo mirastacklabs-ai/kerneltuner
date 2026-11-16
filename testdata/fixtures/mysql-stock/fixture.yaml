@@ -1,0 +1,15 @@
+description: "Bare-metal MySQL 8.4 under systemd with a 1024 open-files limit and bfq on NVMe"
+synthetic: true
+extends: base-linux
+files:
+  "proc/2100/cgroup": "0::/system.slice/mysql.service\n"
+  "proc/2100/cmdline": "/usr/sbin/mysqld\u0000"
+  "proc/2100/comm": "mysqld\n"
+  "proc/2100/fd/0": ""
+  "proc/2100/fd/1": ""
+  "proc/2100/fd/2": ""
+  "proc/2100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1024                1024                files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "sys/block/nvme0n1/queue/rotational": "0\n"
+  "sys/block/nvme0n1/queue/scheduler": "none mq-deadline kyber [bfq]\n"
+  "sys/block/nvme0n1/queue/read_ahead_kb": "128\n"
+  "sys/block/nvme0n1/queue/nr_requests": "256\n"

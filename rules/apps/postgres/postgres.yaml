@@ -1,0 +1,96 @@
+- id: app.postgres.overcommit_memory
+  title: vm.overcommit_memory=2 for PostgreSQL
+  kind: sysctl
+  param: vm.overcommit_memory
+  domain: memory
+  applies:
+    when: 'hasApp("postgres")'
+  recommend: "2"
+  compare: eq
+  namespaced: false
+  risk: medium
+  rationale: >-
+    The PostgreSQL manual says the default Linux virtual-memory behaviour is not optimal for PostgreSQL: because of memory overcommit the kernel may terminate a server process, including the postmaster, when PostgreSQL or another process runs the machine out of virtual memory. Strict mode (`sysctl -w vm.overcommit_memory=2`) does not prevent the OOM killer altogether but "will lower the chances significantly". The manual also suggests tuning vm.overcommit_ratio. Risk: in strict mode allocations fail once the commit limit (swap + overcommit_ratio% of RAM) is reached, so fork-heavy or large-mapping software on the same host can start failing with ENOMEM; size overcommit_ratio and swap first.
+  verify: "sysctl vm.overcommit_memory prints 2; grep -E 'CommitLimit|Committed_AS' /proc/meminfo shows Committed_AS comfortably below CommitLimit"
+  sources:
+    - https://www.postgresql.org/docs/current/kernel-resources.html
+  tests:
+    - fixture: postgres-stock
+      expect: { status: recommend, proposed: "2" }
+    - fixture: postgres-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.postgres.oom_score_adj
+  title: Protect the postmaster from the OOM killer
+  kind: runtime
+  param: oom_score_adj
+  domain: memory
+  applies:
+    when: 'hasApp("postgres") && sysctlNum("vm.overcommit_memory") != 2'
+  advice: >-
+    PostgreSQL is present and vm.overcommit_memory is not 2, so the kernel may pick the postmaster as an OOM victim. The manual's alternative to strict overcommit is to give the postmaster an OOM score adjustment of -1000: run `echo -1000 > /proc/self/oom_score_adj` in the startup script just before launching the postmaster (under systemd, `OOMScoreAdjust=-1000` in the unit; this needs CAP_SYS_RESOURCE or root). Also export `PG_OOM_ADJUST_FILE=/proc/self/oom_score_adj` and `PG_OOM_ADJUST_VALUE=0` so child backends run with the normal adjustment of 0 and can still be killed instead of the supervisor.
+  verify: "cat /proc/<postmaster pid>/oom_score_adj prints -1000 while backend processes show 0"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The PostgreSQL manual describes this as an approach usable with or without vm.overcommit_memory=2: setting the postmaster's oom_score_adj to -1000 guarantees it is not targeted by the OOM killer, so a killed backend makes the server restart cleanly instead of losing the supervisor. The rule is only emitted when strict overcommit is not already in place. The systemd OOMScoreAdjust= spelling is the standard unit-file equivalent and is not stated in the PostgreSQL page. Risk: if the child processes inherit -1000 (PG_OOM_ADJUST_FILE unset) the OOM killer cannot pick PostgreSQL backends at all and may kill something else.
+  sources:
+    - https://www.postgresql.org/docs/current/kernel-resources.html
+  tests:
+    - fixture: postgres-stock
+      expect: { status: recommend }
+    - fixture: postgres-tuned
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.postgres.huge_pages_unreserved
+  title: PostgreSQL present but no explicit huge pages reserved
+  kind: report
+  param: vm.nr_hugepages
+  domain: memory
+  applies:
+    when: 'hasApp("postgres")'
+  detect: 'sysctlNum("vm.nr_hugepages") == 0 && all(values(facts.Memory.HugePages), {# == 0})'
+  advice: >-
+    No explicit huge pages are reserved (vm.nr_hugepages is 0 and no per-size nr_hugepages is set). The PostgreSQL manual says huge pages reduce overhead for the large contiguous shared memory PostgreSQL uses, particularly with a large shared_buffers. Ask the server how many it needs with `postgres -D $PGDATA -C shared_memory_size_in_huge_pages` (server stopped), add headroom for other huge-page users, then `sysctl -w vm.nr_hugepages=<N>` and persist it in /etc/sysctl.conf, or use the kernel parameters `hugepagesz=2M hugepages=<N>`. Check the allocation with `cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages`, and grant memlock (`ulimit -l`) or vm.hugetlb_shm_group if the server cannot use them. With huge_pages=try (the default) PostgreSQL falls back to normal pages; huge_pages=on makes it refuse to start when too few are available.
+  verify: "SHOW huge_pages_status prints on; HugePages_Free in /proc/meminfo drops after the server starts"
+  risk: medium
+  rationale: >-
+    The page count depends on shared_buffers and the other shared memory settings, so the PostgreSQL manual gives no fixed value; only the server can compute it (shared_memory_size_in_huge_pages). The rule therefore reports the situation without proposing a number. Reserved huge pages are taken out of general memory permanently, and the manual notes the kernel may fail to allocate them immediately because of fragmentation, so reserve them early (right after boot). The rule is informational: a host that deliberately keeps huge_pages=off is fine.
+  sources:
+    - https://www.postgresql.org/docs/current/kernel-resources.html
+    - https://www.postgresql.org/docs/current/runtime-config-resource.html
+  tests:
+    - fixture: postgres-stock
+      expect: { status: firing }
+    - fixture: postgres-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.postgres.transparent_hugepage
+  title: Transparent Huge Pages set to always with PostgreSQL
+  kind: report
+  param: /sys/kernel/mm/transparent_hugepage/enabled
+  domain: memory
+  applies:
+    when: 'hasApp("postgres")'
+  detect: 'facts.Memory.THPEnabled == "always"'
+  advice: >-
+    Transparent Huge Pages are set to always. The PostgreSQL manual says THP "has been known to cause performance degradation with PostgreSQL for some users on some Linux versions, so its use is currently discouraged" (unlike explicit huge pages via the huge_pages setting). Consider `echo madvise > /sys/kernel/mm/transparent_hugepage/enabled` (or never) and use explicit huge pages for shared_buffers instead; persist via a tuned profile, udev/systemd unit or the `transparent_hugepage=` kernel parameter.
+  verify: "cat /sys/kernel/mm/transparent_hugepage/enabled shows [madvise] or [never]; query latency is not worse"
+  risk: medium
+  rationale: >-
+    The documentation only says THP is discouraged and does not name a replacement value, so this rule reports the clear case (always) and does not propose a number. The setting is system-wide and other software on the host (JVMs, other databases) may rely on THP. The manual's wording is version-hedged ("some users on some Linux versions"), so treat it as a prompt to measure.
+  sources:
+    - https://www.postgresql.org/docs/current/runtime-config-resource.html
+  tests:
+    - fixture: postgres-stock
+      expect: { status: firing }
+    - fixture: postgres-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

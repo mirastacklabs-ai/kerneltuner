@@ -1,0 +1,8 @@
+description: "postgres-stock after following the PostgreSQL docs: strict overcommit, 3170 huge pages reserved, THP madvise"
+synthetic: true
+extends: postgres-stock
+files:
+  "proc/sys/vm/overcommit_memory": "2\n"
+  "proc/sys/vm/nr_hugepages": "3170\n"
+  "sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages": "3170\n"
+  "sys/kernel/mm/transparent_hugepage/enabled": "always [madvise] never\n"

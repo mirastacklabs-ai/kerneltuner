@@ -1,0 +1,51 @@
+- id: app.mysql.nofile
+  title: MySQL open-files limit below what open_files_limit needs
+  kind: limit
+  param: LimitNOFILE
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "mysql"'
+  recommend: "max(current, 8161)"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The MySQL 8.4 manual says the effective open_files_limit is derived from max_connections and table_open_cache (10 + max_connections + table_open_cache*2, or max_connections*5, whichever is larger) and that "using the defaults for these variables yields 8161". mysqld asks the OS for that many descriptors with setrlimit(), and "on Linux systems using systemd, the value cannot be set greater than LimitNOFILE (this is DefaultLimitNOFILE, if LimitNOFILE is not set)". A soft limit below 8161 therefore means the server cannot get what the defaults need and will log a warning and fail with "Too many open files" under load. 8161 holds only for default max_connections and table_open_cache; raise it further if you increased either.
+  verify: "cat /proc/<mysqld pid>/limits shows Max open files >= 8161 and SELECT @@open_files_limit returns at least that"
+  sources:
+    - https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html
+  tests:
+    - fixture: mysql-stock
+      expect: { status: recommend, proposed: "8161", target: mysql.service }
+    - fixture: mysql-tuned
+      expect: { status: ok, target: mysql.service }
+    - fixture: mariadb-stock
+      expect: { status: not-applicable }
+
+- id: app.mysql.io_scheduler
+  title: Block I/O scheduler for InnoDB native AIO
+  kind: sysfs
+  param: /sys/block/{item}/queue/scheduler
+  domain: storage
+  foreach: block
+  applies:
+    when: 'hasApp("mysql")'
+  filter: 'contains(item.Schedulers, "none") || contains(item.Schedulers, "noop") || contains(item.Schedulers, "mq-deadline") || contains(item.Schedulers, "deadline")'
+  recommend: 'current in ["none", "noop", "mq-deadline", "deadline"] ? current : (contains(item.Schedulers, "none") ? "none" : (contains(item.Schedulers, "noop") ? "noop" : (contains(item.Schedulers, "mq-deadline") ? "mq-deadline" : "deadline")))'
+  compare: eq
+  namespaced: false
+  risk: low
+  rationale: >-
+    The MySQL 8.4 manual says InnoDB uses native AIO on Linux, that with native AIO "the type of I/O scheduler has greater influence on I/O performance", and that "generally, noop and deadline I/O schedulers are recommended", while adding that you should benchmark for your workload. Names changed with blk-mq: noop is called none and deadline is mq-deadline on current kernels, so any of the four is accepted as ok and only another scheduler (for example bfq or kyber) is flagged. Risk: the manual gives no measured number and bfq may suit shared or mixed-tenant disks; the setting is per device and not persistent across reboots.
+  advice: >-
+    `echo none | sudo tee /sys/block/{{.target}}/queue/scheduler` (or mq-deadline). Make it persistent with a udev rule or a tuned disk plugin setting.
+  verify: "cat /sys/block/<disk>/queue/scheduler shows [none] or [mq-deadline]; compare InnoDB I/O latency with your own benchmark"
+  sources:
+    - https://dev.mysql.com/doc/refman/8.4/en/optimizing-innodb-diskio.html
+  tests:
+    - fixture: mysql-stock
+      expect: { status: recommend, proposed: "none", target: nvme0n1 }
+    - fixture: mysql-tuned
+      expect: { status: ok, target: nvme0n1 }
+    - fixture: base-linux
+      expect: { status: not-applicable }

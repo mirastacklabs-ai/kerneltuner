@@ -1,0 +1,12 @@
+- url: https://mariadb.com/kb/en/configuring-linux-for-mariadb/
+  project: mariadb
+  covers: I/O scheduler (none for SSD/NVMe, mq-deadline for hard disks) and open files limit (soft/hard 65535 example)
+  last_reviewed: 2026-11-16
+- url: https://mariadb.com/kb/en/configuring-swappiness/
+  project: mariadb
+  covers: vm.swappiness recommended value 1 for MariaDB, keeping some swap
+  last_reviewed: 2026-11-16
+- url: https://mariadb.com/kb/en/server-system-variables/
+  project: mariadb
+  covers: open_files_limit formula and the hard-limit cap; large_pages needing vm.nr_hugepages and LimitMEMLOCK
+  last_reviewed: 2026-11-16
