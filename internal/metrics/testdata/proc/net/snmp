@@ -1,0 +1,6 @@
+Ip: Forwarding
+Ip: 1
+Tcp: RtoAlgorithm MaxConn CurrEstab RetransSegs
+Tcp: 1 -1 42 100
+Udp: InDatagrams RcvbufErrors
+Udp: 10 2

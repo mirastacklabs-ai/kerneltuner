@@ -1,0 +1,3 @@
+nr_free_pages 1000
+pgfault 5555
+thp_fault_alloc 4
