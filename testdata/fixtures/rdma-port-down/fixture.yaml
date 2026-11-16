@@ -1,0 +1,5 @@
+description: "gpu-8xh100 where the InfiniBand port of mlx5_3 is DOWN (seven of eight HCAs ACTIVE)"
+synthetic: true
+extends: gpu-8xh100
+files:
+  "sys/class/infiniband/mlx5_3/ports/1/state": "1: DOWN\n"

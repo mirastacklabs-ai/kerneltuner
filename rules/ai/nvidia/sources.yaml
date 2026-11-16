@@ -1,0 +1,28 @@
+- url: https://docs.nvidia.com/deploy/driver-persistence/persistence-daemon.html
+  project: nvidia
+  covers: nvidia-persistenced vs legacy persistence mode
+  last_reviewed: "2026-11-16"
+- url: https://docs.nvidia.com/cuda/gpudirect-rdma/index.html
+  project: nvidia
+  covers: GPUDirect RDMA, IOMMU requirement, nvidia-peermem
+  last_reviewed: "2026-11-16"
+- url: https://docs.vllm.ai/en/stable/deployment/docker/
+  project: vllm
+  covers: docker run --ipc=host / --shm-size for shared memory
+  last_reviewed: "2026-11-16"
+- url: https://docs.vllm.ai/en/stable/serving/parallelism_scaling/
+  project: vllm
+  covers: GPUDirect RDMA container settings (IPC_LOCK, /dev/shm), NCCL_DEBUG check
+  last_reviewed: "2026-11-16"
+- url: https://rocm.docs.amd.com/en/latest/how-to/system-optimization/mi300x.html
+  project: amd
+  covers: iommu=pt kernel command line (vendor-neutral meaning of the flag)
+  last_reviewed: "2026-11-16"
+- url: https://raw.githubusercontent.com/torvalds/linux/master/drivers/pci/pci-sysfs.c
+  project: linux
+  covers: current_link_width / max_link_width PCI sysfs attributes (source)
+  last_reviewed: "2026-11-16"
+- url: https://docs.nvidia.com/datacenter/dcgm/latest/user-guide/dcgm-diagnostics.html
+  project: nvidia
+  covers: DCGM PCIe diagnostic expects min_pci_width 16 on H100 PCIe
+  last_reviewed: "2026-11-16"
