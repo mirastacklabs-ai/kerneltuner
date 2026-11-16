@@ -13,8 +13,18 @@
   rationale: >-
     The default soft RLIMIT_NOFILE is 1024 (systemd keeps it there for select() compatibility and raises only the hard limit), and nginx documents that worker_connections cannot exceed the open-files limit. The rule fires only while nginx workers are still at or below 1024; once worker_rlimit_nofile (or LimitNOFILE) raised them it is not-applicable. The nginx config is not parsed, so whether 1024 is actually too low depends on worker_connections.
   sources:
-    - https://nginx.org/en/docs/ngx_core_module.html#worker_rlimit_nofile
-    - https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+    - url: https://nginx.org/en/docs/ngx_core_module.html#worker_rlimit_nofile
+      section: "worker_connections"
+      quote: "Another consideration is that the actual number of simultaneous connections cannot exceed the current limit on the maximum number of open files, which can be changed by worker_rlimit_nofile."
+    - url: https://nginx.org/en/docs/ngx_core_module.html#worker_rlimit_nofile
+      section: "worker_rlimit_nofile"
+      quote: "Changes the limit on the maximum number of open files (RLIMIT_NOFILE) for worker processes. Used to increase the limit without restarting the main process."
+    - url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+      section: "CHANGES WITH 240"
+      quote: "The Linux kernel's current default RLIMIT_NOFILE resource limit for userspace processes is set to 1024 (soft) and 4096 (hard)."
+    - url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+      section: "CHANGES WITH 240"
+      quote: "Note that the soft limit remains at 1024 for compatibility reasons: the traditional UNIX select() call cannot deal with file descriptors >= 1024"
   tests:
     - fixture: web-16c-64g-nginx
       expect: { status: recommend }
@@ -41,9 +51,15 @@
   rationale: >-
     Linux caps listen() backlog at net.core.somaxconn, which was 128 before kernel 5.4 and 4096 since (commit 19f92a030ca6), while nginx asks for 511 by default; on older kernels nginx's backlog is therefore cut to 128. On 5.4+ the cap is no longer the limit unless someone lowered it, so the rule then fires only on observed ListenOverflows. Deeper queues add latency under overload.
   sources:
-    - https://nginx.org/en/docs/http/ngx_http_core_module.html#listen
-    - https://docs.kernel.org/networking/ip-sysctl.html
-    - https://kernelnewbies.org/Linux_5.4
+    - url: https://nginx.org/en/docs/http/ngx_http_core_module.html#listen
+      section: "listen"
+      quote: "By default, backlog is set to -1 on FreeBSD, DragonFly BSD, and macOS, and to 511 on other platforms."
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: "somaxconn"
+      quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"
+    - url: https://kernelnewbies.org/Linux_5.4
+      section: "11. Networking"
+      quote: "Increase SOMAXCONN (/proc/sys/net/core/somaxconn) from 128 to 4096"
   tests:
     - fixture: nginx-small-somaxconn
       expect: { status: recommend }

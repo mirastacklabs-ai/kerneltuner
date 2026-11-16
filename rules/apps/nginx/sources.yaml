@@ -1,16 +1,25 @@
 - url: https://nginx.org/en/docs/ngx_core_module.html#worker_rlimit_nofile
+  title: "Core functionality"
   project: nginx
   covers: worker_rlimit_nofile, worker_connections vs the open-files limit
   last_reviewed: 2026-11-16
 - url: https://nginx.org/en/docs/http/ngx_http_core_module.html#listen
+  title: "Module ngx_http_core_module"
   project: nginx
   covers: listen backlog= default (511 on Linux)
   last_reviewed: 2026-11-16
 - url: https://docs.kernel.org/networking/ip-sysctl.html
+  title: "IP Sysctl - The Linux Kernel documentation"
   project: linux
   covers: net.core.somaxconn default (4096 since 5.4, 128 before), listen backlog cap
   last_reviewed: 2026-11-16
 - url: https://kernelnewbies.org/Linux_5.4
+  title: "Linux_5.4 - Linux Kernel Newbies"
   project: linux
   covers: SOMAXCONN raised from 128 to 4096 in 5.4
+  last_reviewed: 2026-11-16
+- url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+  title: "systemd NEWS"
+  project: systemd
+  covers: kernel default RLIMIT_NOFILE 1024 soft / 4096 hard; systemd soft limit stays 1024
   last_reviewed: 2026-11-16

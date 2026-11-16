@@ -13,8 +13,12 @@
   rationale: >-
     Envoy's FAQ and overload manager docs say the connection limits should stay under half of the file descriptor limit because every downstream connection usually has an upstream one plus files. A soft limit of 1024 is the common non-raised default, so this rule fires only while Envoy is still at or below it; the Envoy docs do not state a recommended absolute LimitNOFILE value, so none is proposed. Envoy's config is not parsed, so whether 1024 is actually too low depends on the expected connection count.
   sources:
-    - https://www.envoyproxy.io/docs/envoy/latest/faq/configuration/resource_limits
-    - https://www.envoyproxy.io/docs/envoy/latest/configuration/operations/overload_manager/overload_manager
+    - url: https://www.envoyproxy.io/docs/envoy/latest/faq/configuration/resource_limits
+      section: "How does Envoy prevent file descriptor exhaustion?"
+      quote: "On Unix-based systems, it is recommended to keep the sum of all connection limits less than half of the system's file descriptor limit to account for upstream connections, files, and other usage of file descriptors."
+    - url: https://www.envoyproxy.io/docs/envoy/latest/configuration/operations/overload_manager/overload_manager
+      section: "Limiting Active Connections"
+      quote: "The connection limit is recommended to be less than half of the system's file descriptor limit, to account for upstream connections, files, and other usage of file descriptors."
   tests:
     - fixture: envoy-stock
       expect: { status: recommend }
@@ -41,8 +45,12 @@
   rationale: >-
     The Envoy API reference states that without tcp_backlog_size "net.core.somaxconn will be used on Linux", so a low host sysctl directly shrinks every Envoy listener queue. The kernel documents somaxconn as 4096 by default, 128 before Linux 5.4, so the rule fires on the old default or on observed ListenOverflows. Deeper queues add latency under overload. Envoy's config is not parsed, so an explicit tcp_backlog_size is not visible.
   sources:
-    - https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/listener/v3/listener.proto
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/listener/v3/listener.proto
+      section: "config.listener.v3.Listener"
+      quote: "If no value is provided net.core.somaxconn will be used on Linux and 128 otherwise."
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: "somaxconn"
+      quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"
   tests:
     - fixture: envoy-small-somaxconn
       expect: { status: recommend }

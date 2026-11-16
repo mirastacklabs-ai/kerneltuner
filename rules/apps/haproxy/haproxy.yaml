@@ -13,8 +13,18 @@
   rationale: >-
     The kernel default RLIMIT_NOFILE is 1024 soft / 4096 hard, and systemd since v240 overrides the hard limit to 512K for services. A HAProxy still at a 4096 hard limit (an old systemd, a sysvinit-style launch, or a unit that pins LimitNOFILE) is bound by it because HAProxy's automatic maxconn and soft-limit adjustment never exceed the hard limit. The HAProxy manual gives no sysctl guidance for this, so the rule is limited to the fd limit and does not propose a maxconn number (the config is not parsed).
   sources:
-    - https://docs.haproxy.org/3.0/configuration.html
-    - https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+    - url: https://docs.haproxy.org/3.0/configuration.html
+      section: "3.1. Process management and security"
+      quote: "If maxconn value is not set, it will be automatically calculated based on the current file descriptors limits, reported by the \"ulimit -nH\" command (we take the maximum between the hard and soft values)"
+    - url: https://docs.haproxy.org/3.0/configuration.html
+      section: "3.1. Process management and security"
+      quote: "By default, it is automatically computed, so it is recommended not to use this option. If the intent is only to limit the number of file descriptors, better use \"fd-hard-limit\" instead."
+    - url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+      section: "CHANGES WITH 240"
+      quote: "The Linux kernel's current default RLIMIT_NOFILE resource limit for userspace processes is set to 1024 (soft) and 4096 (hard)."
+    - url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+      section: "CHANGES WITH 240"
+      quote: "With this systemd release the hard limit systemd passes on is increased to 512K, overriding the kernel's defaults"
   tests:
     - fixture: legacy-4.9-c10k
       expect: { status: recommend }

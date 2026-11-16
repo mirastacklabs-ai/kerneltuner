@@ -13,9 +13,15 @@
     The overlay kernel module is not loaded. Load it with `modprobe overlay` and make it persistent (the containerd unit does this with `ExecStartPre=-/sbin/modprobe overlay`, or add `overlay` to /etc/modules-load.d/containerd.conf). Ignore this if containerd is configured with a different snapshotter.
   verify: "lsmod shows overlay (or /sys/module/overlay exists), and containerd starts pods with the overlayfs snapshotter"
   sources:
-    - https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
-    - https://raw.githubusercontent.com/containerd/containerd/main/docs/ops.md
-    - https://raw.githubusercontent.com/containerd/containerd/main/docs/cri/config.md
+    - url: https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
+      section: "[Service]"
+      quote: "ExecStartPre=-/sbin/modprobe overlay"
+    - url: https://raw.githubusercontent.com/containerd/containerd/main/docs/ops.md
+      section: "systemd"
+      quote: "ExecStartPre=-/sbin/modprobe overlay"
+    - url: https://raw.githubusercontent.com/containerd/containerd/main/docs/cri/config.md
+      section: "Snapshotter"
+      quote: "The default snapshotter is set to `overlayfs` (akin to Docker's `overlay2` storage driver):"
   tests:
     - fixture: containerd-stock
       expect: { status: firing }

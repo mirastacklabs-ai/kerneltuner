@@ -13,7 +13,12 @@
   rationale: >-
     The Fluent Bit Tail documentation says that to monitor a large number of files you can increase the inotify settings through the sysctl parameters fs.inotify.max_user_watches and fs.inotify.max_user_instances, and shows a systemd override with LimitNOFILE to raise the number of files the plugin can monitor. It also notes that watch registration can fail with ENOSPC when fs.inotify.max_user_watches is exhausted, and that after an inotify queue overflow Fluent Bit reconciles the monitored files. The docs provide no recommended numbers, so none is proposed and the rule cannot tell whether the current values are enough; it only surfaces the documented knobs when Fluent Bit is present. Risk: the inotify limits are per-user kernel resources shared by every process of that user.
   sources:
-    - https://docs.fluentbit.io/manual/data-pipeline/inputs/tail
+    - url: https://docs.fluentbit.io/manual/data-pipeline/inputs/tail
+      section: "Monitor a large number of files"
+      quote: "To monitor a large number of files, you can increase the inotify settings in your Linux environment by modifying the following sysctl parameters:"
+    - url: https://docs.fluentbit.io/manual/data-pipeline/inputs/tail
+      section: "Inotify queue overflow handling"
+      quote: "Retries watch registration for files that previously failed, for example due to ENOSPC when fs.inotify.max_user_watches is exhausted."
   tests:
     - fixture: fluent-bit-stock
       expect: { status: recommend }

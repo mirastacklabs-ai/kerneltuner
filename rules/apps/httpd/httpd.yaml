@@ -16,8 +16,18 @@
   rationale: >-
     mpm_common documents ListenBackLog default 511 and that the OS usually caps it; Linux caps it at net.core.somaxconn, which the kernel documents as 4096 (128 before 5.4). The httpd docs also say tuning is generally not needed, so the rule fires only when somaxconn is below the 511 default or ListenOverflows is observed. Deeper queues add latency under overload, and the httpd config is not parsed.
   sources:
-    - https://httpd.apache.org/docs/2.4/mod/mpm_common.html
-    - https://docs.kernel.org/networking/ip-sysctl.html
+    - url: https://httpd.apache.org/docs/2.4/mod/mpm_common.html
+      section: "ListenBackLog Directive"
+      quote: "Default: ListenBackLog 511"
+    - url: https://httpd.apache.org/docs/2.4/mod/mpm_common.html
+      section: "ListenBackLog Directive"
+      quote: "Generally no tuning is needed or desired; however on some systems, it is desirable to increase this when under a TCP SYN flood attack."
+    - url: https://httpd.apache.org/docs/2.4/mod/mpm_common.html
+      section: "ListenBackLog Directive"
+      quote: "This will often be limited to a smaller number by the operating system."
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: "somaxconn"
+      quote: "Limit of socket listen() backlog, known in userspace as SOMAXCONN. Defaults to 4096. (Was 128 before linux-5.4)"
   tests:
     - fixture: httpd-small-somaxconn
       expect: { status: recommend }
@@ -41,7 +51,12 @@
   rationale: >-
     The perf-tuning page names swapping as the main hardware-side performance hazard and gives a sizing procedure for MaxRequestWorkers instead of a kernel setting. The rule fires only on observed swap-out activity, so an idle swap partition is not flagged. The httpd config and process sizes are not parsed.
   sources:
-    - https://httpd.apache.org/docs/2.4/misc/perf-tuning.html
+    - url: https://httpd.apache.org/docs/2.4/misc/perf-tuning.html
+      section: "Hardware and Operating System Issues"
+      quote: "A webserver should never ever have to swap, as swapping increases the latency of each request beyond a point that users consider \"fast enough\"."
+    - url: https://httpd.apache.org/docs/2.4/misc/perf-tuning.html
+      section: "Hardware and Operating System Issues"
+      quote: "You can, and should, control the MaxRequestWorkers setting so that your server does not spawn so many children that it starts swapping."
   tests:
     - fixture: httpd-swapping
       expect: { status: recommend }

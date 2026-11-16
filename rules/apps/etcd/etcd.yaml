@@ -13,8 +13,15 @@
   rationale: >-
     The etcd tuning guide says an etcd cluster is very sensitive to disk latencies: because etcd must persist proposals to its log, disk activity from other processes can cause long fsync latencies, which can make etcd miss heartbeats, time out requests and lose its leader temporarily. It adds that etcd can sometimes run stably alongside such processes when given a high disk priority, configured on Linux with `ionice -c2 -n0` (best effort, highest priority). The I/O priority of a running process is not visible to kerneltuner, so the rule is gated on etcd sharing the host with another detected application. Risk: ionice priorities only take effect with an I/O scheduler that honours them (for example BFQ), and etcd's priority can slow the co-located processes' I/O.
   sources:
-    - https://etcd.io/docs/latest/tuning/
-    - https://etcd.io/docs/latest/op-guide/hardware/
+    - url: https://etcd.io/docs/v3.7/tuning/
+      section: "Disk"
+      quote: "An etcd cluster is very sensitive to disk latencies. Since etcd must persist proposals to its log, disk activity from other processes may cause long fsync latencies."
+    - url: https://etcd.io/docs/v3.7/tuning/
+      section: "Disk"
+      quote: "An etcd server can sometimes stably run alongside these processes when given a high disk priority. On Linux, etcd's disk priority can be configured with ionice"
+    - url: https://etcd.io/docs/v3.7/op-guide/hardware/
+      section: "Disks"
+      quote: "etcd is very sensitive to disk write latency."
   tests:
     - fixture: etcd-shared-host
       expect: { status: recommend }

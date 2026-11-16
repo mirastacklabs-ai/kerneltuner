@@ -1,12 +1,15 @@
 - url: https://httpd.apache.org/docs/2.4/mod/mpm_common.html
+  title: "mpm_common - Apache HTTP Server Version 2.4"
   project: httpd
   covers: ListenBackLog default 511 and OS-imposed cap
   last_reviewed: 2026-11-16
 - url: https://httpd.apache.org/docs/2.4/misc/perf-tuning.html
+  title: "Apache Performance Tuning - Apache HTTP Server Version 2.4"
   project: httpd
   covers: never swap, size MaxRequestWorkers to RAM; EnableSendfile/EnableMMAP on NFS
   last_reviewed: 2026-11-16
 - url: https://docs.kernel.org/networking/ip-sysctl.html
+  title: "IP Sysctl - The Linux Kernel documentation"
   project: linux
   covers: net.core.somaxconn default (4096 since 5.4, 128 before)
   last_reviewed: 2026-11-16

@@ -13,7 +13,12 @@
     The running kernel ({{.facts.Kernel.Release}}) is below Cilium's documented minimum of 5.10 (or 4.18 on RHEL 8.10). Upgrade the node kernel before running the Cilium agent; see the system requirements page for features that need newer kernels.
   verify: "uname -r reports >= 5.10 (or a RHEL 8.10 4.18 kernel), and the cilium-agent starts without eBPF feature errors"
   sources:
-    - https://docs.cilium.io/en/stable/operations/system_requirements/
+    - url: https://docs.cilium.io/en/stable/operations/system_requirements/
+      section: "Summary"
+      quote: "Linux kernel >= 5.10 or equivalent (e.g., 4.18 on RHEL 8.10)"
+    - url: https://docs.cilium.io/en/stable/operations/system_requirements/
+      section: "Linux Kernel"
+      quote: "For this version of Cilium, it is recommended to use kernel 5.10 or later (or equivalent such as 4.18 on RHEL 8.10)."
   tests:
     - fixture: cilium-oldkernel
       expect: { status: firing }

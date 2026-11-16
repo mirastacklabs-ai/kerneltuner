@@ -1,4 +1,5 @@
 - url: https://docs.cilium.io/en/stable/operations/system_requirements/
+  title: "System Requirements"
   project: cilium
   covers: minimum kernel (5.10, or 4.18 on RHEL 8.10) and required kernel config options
   last_reviewed: 2026-11-16
