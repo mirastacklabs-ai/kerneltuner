@@ -1,0 +1,16 @@
+description: "ZooKeeper on a 4 GiB host while the host swaps (pswpout 250/s)"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3200/cgroup": "0::/system.slice/zookeeper.service\n"
+  "proc/3200/cmdline": "/usr/bin/java\u0000-Xmx3g\u0000-cp\u0000/opt/zookeeper/lib/*\u0000org.apache.zookeeper.server.quorum.QuorumPeerMain\u0000/opt/zookeeper/conf/zoo.cfg\u0000"
+  "proc/3200/comm": "java\n"
+  "proc/3200/fd/0": ""
+  "proc/3200/fd/1": ""
+  "proc/3200/fd/2": ""
+  "proc/3200/fd/3": ""
+  "proc/3200/fd/4": ""
+  "proc/3200/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            65536                524288               files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/meminfo": "MemTotal:       4194304 kB\nMemFree:        2097152 kB\nMemAvailable:   2097152 kB\nBuffers:        10000 kB\nCached:         100000 kB\nSwapTotal:      0 kB\nSwapFree:       0 kB\n"
+rates:
+  "vmstat.pswpout": 250.0

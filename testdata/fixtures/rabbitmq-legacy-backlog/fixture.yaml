@@ -1,0 +1,16 @@
+description: "RabbitMQ on a pre-5.4 style host: somaxconn 128, accept queue overflowing (3/s)"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3300/cgroup": "0::/system.slice/rabbitmq-server.service\n"
+  "proc/3300/cmdline": "/usr/lib/erlang/erts-14.2/bin/beam.smp\u0000-W\u0000w\u0000-A\u0000128\u0000--\u0000-root\u0000/usr/lib/erlang\u0000-s\u0000rabbit\u0000boot\u0000"
+  "proc/3300/comm": "beam.smp\n"
+  "proc/3300/fd/0": ""
+  "proc/3300/fd/1": ""
+  "proc/3300/fd/2": ""
+  "proc/3300/fd/3": ""
+  "proc/3300/fd/4": ""
+  "proc/3300/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            65536                524288               files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/sys/net/core/somaxconn": "128\n"
+rates:
+  "TcpExt.ListenOverflows": 3.0

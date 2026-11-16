@@ -1,0 +1,90 @@
+- id: app.kafka.nofile
+  title: Kafka broker open-files limit below 100000
+  kind: limit
+  param: LimitNOFILE
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "kafka"'
+  recommend: "max(current, 100000)"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The Kafka OS documentation says the broker uses file descriptors for log segments and for open connections, and recommends "at least 100000 allowed file descriptors for the broker processes as a starting point". A broker with many partitions needs at least (number_of_partitions)*(partition_size/segment_size) descriptors for segments alone, and mmap'd index files keep an extra reference after close(), so the count grows with partitions. The soft limit shown is what the running broker actually has.
+  verify: "cat /proc/<kafka pid>/limits shows Max open files >= 100000"
+  sources:
+    - https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+  tests:
+    - fixture: kafka-stock
+      expect: { status: recommend, proposed: "100000", target: kafka.service }
+    - fixture: kafka-tuned
+      expect: { status: ok, target: kafka.service }
+
+- id: app.kafka.max_map_count
+  title: vm.max_map_count at the default with a Kafka broker
+  kind: runtime
+  param: vm.max_map_count
+  domain: memory
+  applies:
+    when: 'hasApp("kafka") && sysctlNum("vm.max_map_count") > 0 && sysctlNum("vm.max_map_count") <= 65535'
+  advice: >-
+    vm.max_map_count is {{index .facts.Sysctl "vm.max_map_count"}}, the default the Kafka docs call "somewhere around 65535". Each log segment needs an index and a timeindex file, and each consumes one map area, so every segment costs 2 map areas and every partition at least 2. The docs' example: 50000 partitions give 100000 map areas and "likely cause broker crash with OutOfMemoryError (Map failed)" at the default. Count the broker's expected partitions times segments per partition, multiply by 2, and set vm.max_map_count above that. The docs give no fixed value.
+  verify: "sysctl vm.max_map_count exceeds 2 x (partitions x segments per partition) on the broker; no 'OutOfMemoryError: Map failed' in the broker log"
+  namespaced: false
+  risk: low
+  rationale: >-
+    The Kafka docs tie vm.max_map_count to the maximum number of partitions a broker can host, because every segment's offset and time index is memory-mapped. The docs publish a sizing rule but no recommended value, so this rule only flags the default and shows the formula; it fires only when the value is at or below 65535, the default the docs cite. Risk: a higher value lets a process keep more mappings, which costs kernel memory per mapping; it is rarely a concern at the sizes involved.
+  sources:
+    - https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+  tests:
+    - fixture: kafka-stock
+      expect: { status: recommend }
+    - fixture: kafka-tuned
+      expect: { status: not-applicable }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.kafka.data_dir_mount
+  title: Kafka data directory filesystem and mount options
+  kind: runtime
+  param: mount
+  domain: storage
+  applies:
+    when: 'hasApp("kafka")'
+  advice: >-
+    For every Kafka data directory the docs recommend the mount option noatime ("Kafka does not rely on the atime attributes at all, so it is safe to disable this") and prefer XFS over EXT4 (XFS "does not require any change in the default settings"). Check with `findmnt -T <log.dirs path>`. kerneltuner cannot read mount options, so this is advice only. EXT4 tuning options (data=writeback, commit=, nobarrier on XFS) are documented as unsafe or device dependent and are not recommended here.
+  verify: "findmnt -T <log.dirs path> shows noatime and a filesystem type of xfs"
+  namespaced: false
+  risk: low
+  rationale: >-
+    The Kafka docs state that noatime removes a significant number of filesystem writes, especially when consumers bootstrap, and that tests on a busy cluster showed XFS Request Local Time of about 160 ms versus 250 ms or more for the best EXT4 configuration, with less variability. Data directories should also not share drives with application logs or other OS activity. Risk: remounting a data directory needs a maintenance window; moving to XFS means reformatting the volume and replicating data back.
+  sources:
+    - https://raw.githubusercontent.com/apache/kafka/trunk/docs/operations/hardware-and-os.md
+  tests:
+    - fixture: kafka-stock
+      expect: { status: recommend }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.kafka.listen_backlog
+  title: Kafka listen backlog overflowing; raise socket.listen.backlog.size with somaxconn
+  kind: runtime
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: 'hasApp("kafka") && rate("TcpExt.ListenOverflows") > 0'
+  advice: >-
+    Accept-queue overflows are happening on this host while a Kafka broker runs. The broker's socket.listen.backlog.size defaults to 50, and the Kafka config docs say that on Linux "you may also need to configure somaxconn and tcp_max_syn_backlog kernel parameters accordingly to make the configuration takes effect". Raise socket.listen.backlog.size in server.properties and keep net.core.somaxconn ({{index .facts.Sysctl "net.core.somaxconn"}}) and net.ipv4.tcp_max_syn_backlog ({{index .facts.Sysctl "net.ipv4.tcp_max_syn_backlog"}}) at least as large. The docs give no recommended value.
+  verify: "TcpExt.ListenOverflows rate returns to 0"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The kernel truncates a listen() backlog to net.core.somaxconn, so the application setting is silently capped by it. The rule applies only while ListenOverflows is increasing, since the default backlog of 50 is fine for steady connection counts. Risk: a larger queue only holds more half-served connections; it does not cost meaningful memory.
+  sources:
+    - https://raw.githubusercontent.com/apache/kafka/trunk/server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: kafka-listen-overflow
+      expect: { status: recommend }
+    - fixture: kafka-stock
+      expect: { status: not-applicable }

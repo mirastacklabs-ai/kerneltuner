@@ -1,0 +1,70 @@
+- id: app.zookeeper.swapping
+  title: Host is swapping while ZooKeeper runs
+  kind: report
+  param: swap
+  domain: memory
+  applies:
+    when: 'hasApp("zookeeper")'
+  detect: 'rate("vmstat.pswpin") > 0 || rate("vmstat.pswpout") > 0'
+  risk: high
+  rationale: >-
+    The ZooKeeper Administrator's Guide says ZooKeeper "simply cannot be allowed to swap" if it is to function with any sort of timeliness, and "the disk is death to ZooKeeper": requests are strictly ordered, so if processing one request swaps, all queued requests will probably do the same, which leads to session timeouts and elections. The guide's fix is sizing, not a sysctl: keep the JVM heap well below real memory. It does not give a vm.swappiness value, so this rule only reports observed swap-in or swap-out activity.
+  advice: >-
+    Find what is swapping (`vmstat 1`, `smem`) and free memory: lower the ZooKeeper max heap (the guide suggests, for example, 3 GB on a 4 GB machine), stop co-located memory hogs, or move ZooKeeper to a bigger host. If you also lower vm.swappiness, treat that as your own choice; the ZooKeeper docs do not specify a value.
+  verify: "vmstat.pswpin and vmstat.pswpout rates stay 0; ZooKeeper latency (zk_avg_latency) is stable"
+  sources:
+    - https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+  tests:
+    - fixture: zookeeper-swapping
+      expect: { status: firing }
+    - fixture: zookeeper-stock
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.zookeeper.heap_exceeds_ram
+  title: ZooKeeper max heap larger than physical memory
+  kind: report
+  param: -Xmx
+  domain: memory
+  applies:
+    when: 'hasApp("zookeeper")'
+  detect: 'facts.Memory.TotalBytes > 0 && any(facts.Procs, {any(.Cmdline, {# contains "org.apache.zookeeper.server"}) && any(.Cmdline, {# startsWith "-Xmx" && bytes(trimPrefix(#, "-Xmx")) > facts.Memory.TotalBytes})})'
+  risk: high
+  rationale: >-
+    The guide tells operators to make certain "that the maximum heap size given to ZooKeeper is not bigger than the amount of real memory available to ZooKeeper", and gives an example of a 3 GB heap on a 4 GB machine because the OS and cache also need memory. A heap above total RAM guarantees swapping. This check is deliberately weak: it fires only when -Xmx on the process command line exceeds MemTotal, not when the heap merely leaves too little headroom. Containers with a memory limit are not considered.
+  advice: >-
+    Lower -Xmx (set via JVMFLAGS or SERVER_JVMFLAGS) so the heap fits in real memory with room for the OS and page cache; load-test to pick the value.
+  verify: "the -Xmx on the ZooKeeper command line is below MemTotal in /proc/meminfo, with headroom"
+  sources:
+    - https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+  tests:
+    - fixture: zookeeper-heap-over-ram
+      expect: { status: firing }
+    - fixture: zookeeper-stock
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.zookeeper.listen_backlog
+  title: ZooKeeper listen backlog overflowing; raise clientPortListenBacklog with somaxconn
+  kind: runtime
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: 'hasApp("zookeeper") && rate("TcpExt.ListenOverflows") > 0'
+  advice: >-
+    Accept-queue overflows are happening on this host while ZooKeeper runs. clientPortListenBacklog is unset by default, which "on Linux, uses a backlog of 50", and the guide warns that connections beyond it get a network timeout (30s) that may cause session expiry. Set clientPortListenBacklog in zoo.cfg to a positive value and keep net.core.somaxconn ({{index .facts.Sysctl "net.core.somaxconn"}}) and net.ipv4.tcp_max_syn_backlog ({{index .facts.Sysctl "net.ipv4.tcp_max_syn_backlog"}}) at least as large, because the kernel caps the backlog at somaxconn. The guide gives no recommended value.
+  verify: "TcpExt.ListenOverflows rate returns to 0; no client session expirations after reconnect storms"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The ZooKeeper guide documents clientPortListenBacklog (3.4.14, 3.5.5, 3.6.0 and later) and the 50-entry Linux default. The kernel documents net.core.somaxconn as the limit of the socket listen() backlog, so a larger application value only takes effect if somaxconn allows it. The rule applies only while ListenOverflows is increasing. Risk: low; a larger queue holds more half-served connections.
+  sources:
+    - https://zookeeper.apache.org/doc/current/zookeeperAdmin.html
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: zookeeper-listen-overflow
+      expect: { status: recommend }
+    - fixture: zookeeper-stock
+      expect: { status: not-applicable }

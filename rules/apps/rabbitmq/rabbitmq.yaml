@@ -1,0 +1,213 @@
+- id: app.rabbitmq.nofile
+  title: RabbitMQ open-file-handle limit below 50K
+  kind: limit
+  param: LimitNOFILE
+  domain: limits
+  foreach: app
+  filter: 'item.Name == "rabbitmq"'
+  recommend: "max(current, 50000)"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The production checklist says to "make sure production environments allow for at least 50K open file descriptors for effective RabbitMQ user". It gives the sizing guideline of 2 x the 95th-percentile concurrent connections plus the total number of queues (the networking guide says 1.5 x connections), and notes that values as high as 500K are not inadequate. Sockets count as file handles, so hitting the limit stops the node accepting connections. The soft limit shown is what the running node has. "50K" is read as 50000.
+  verify: "cat /proc/<beam.smp pid>/limits shows Max open files >= 50000; rabbitmqctl status shows file descriptors well below the limit"
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/production-checklist.md
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+  tests:
+    - fixture: rabbitmq-stock
+      expect: { status: recommend, proposed: "50000", target: rabbitmq-server.service }
+    - fixture: rabbitmq-tuned
+      expect: { status: ok, target: rabbitmq-server.service }
+
+- id: app.rabbitmq.erl_max_ports
+  title: Raised open-file limit needs ERL_MAX_PORTS raised with it
+  kind: runtime
+  param: ERL_MAX_PORTS
+  domain: limits
+  applies:
+    when: 'hasApp("rabbitmq") && any(workload.Apps, {.Name == "rabbitmq" && .NoFileSoft > 65536 && .NoFileSoft < 1e18})'
+  advice: >-
+    The RabbitMQ open-file limit on this host is above 65536. The networking guide says the Erlang runtime has a related port limit controlled by the ERL_MAX_PORTS environment variable, "usually set to 65536" by default, and that when you override the file-handle limit to a higher value, ERL_MAX_PORTS must be overridden accordingly (in rabbitmq-env.conf). Check the effective value with `rabbitmqctl eval 'erlang:system_info(port_limit).'`. The same guide warns that very high limits can make the Erlang runtime allocate a lot of memory upfront on some distributions, so size the limit to the workload.
+  verify: "rabbitmqctl eval 'erlang:system_info(port_limit).' returns at least the open-file limit you need"
+  namespaced: true
+  risk: low
+  rationale: >-
+    Raising LimitNOFILE alone does not raise the Erlang port limit, so connections can still be refused near 65536 on a node that was given a larger file limit. This is app and kernel-limit interplay documented in the networking guide; the docs give no formula beyond "overridden accordingly". Applies only when the running node's soft limit is above 65536 and not unlimited.
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+  tests:
+    - fixture: rabbitmq-big-nofile
+      expect: { status: recommend }
+    - fixture: rabbitmq-tuned
+      expect: { status: not-applicable }
+
+- id: app.rabbitmq.somaxconn
+  title: net.core.somaxconn for RabbitMQ connection bursts
+  kind: sysctl
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: 'hasApp("rabbitmq")'
+  recommend: "4096"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The RabbitMQ networking guide lists net.core.somaxconn as the size of the listen queue (documented there with a default of 128) and says "Increase to 4096 or higher to support inbound connection bursts, e.g. when clients reconnect en masse". The kernel documents the value as the cap on every listen() backlog, so RabbitMQ's own tcp_listen_options.backlog cannot exceed it. Linux 5.4 and later default to 4096, where this rule is already ok. The setting is per network namespace.
+  verify: "sysctl net.core.somaxconn prints at least 4096; TcpExt.ListenOverflows rate stays 0 during client reconnect storms"
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: rabbitmq-legacy-backlog
+      expect: { status: recommend, proposed: "4096" }
+    - fixture: rabbitmq-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.rabbitmq.tcp_max_syn_backlog
+  title: net.ipv4.tcp_max_syn_backlog for RabbitMQ
+  kind: sysctl
+  param: net.ipv4.tcp_max_syn_backlog
+  domain: network
+  applies:
+    when: 'hasApp("rabbitmq")'
+  recommend: "4096"
+  compare: gte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The networking guide describes this as the maximum number of remembered connection requests that have not yet been acknowledged by the connecting client, documents the default as 128 and the maximum as 65535, and says "4096 and 8192 are recommended starting values when optimising for throughput". The smaller value, 4096, is proposed. Each pending SYN_RECV request costs a few hundred bytes of kernel memory according to the kernel docs.
+  verify: "sysctl net.ipv4.tcp_max_syn_backlog prints at least 4096"
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: rabbitmq-stock
+      expect: { status: recommend, proposed: "4096" }
+    - fixture: rabbitmq-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.rabbitmq.tcp_fin_timeout
+  title: net.ipv4.tcp_fin_timeout for RabbitMQ connection churn
+  kind: sysctl
+  param: net.ipv4.tcp_fin_timeout
+  domain: network
+  applies:
+    when: 'hasApp("rabbitmq")'
+  recommend: "30"
+  compare: lte
+  namespaced: true
+  risk: low
+  rationale: >-
+    The networking guide says "Lowering this timeout to a value in the 15-30 second range reduces the amount of time closed connections will stay in the TIME_WAIT state" and uses 30 in its example for high connection churn. 30 is proposed, the top of that range. This matters for nodes that see many short-lived client connections; for steady long-lived connections it has no effect. Risk: low; it only shortens how long orphaned FIN_WAIT_2 sockets are held.
+  verify: "sysctl net.ipv4.tcp_fin_timeout prints 30 or less; sockstat.tcp.tw drops under churn"
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+  tests:
+    - fixture: rabbitmq-stock
+      expect: { status: recommend, proposed: "30" }
+    - fixture: rabbitmq-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.rabbitmq.tcp_keepalive_time
+  title: net.ipv4.tcp_keepalive_time for RabbitMQ (guide example)
+  kind: sysctl
+  param: net.ipv4.tcp_keepalive_time
+  domain: network
+  applies:
+    when: 'hasApp("rabbitmq")'
+  recommend: "30"
+  compare: lte
+  namespaced: true
+  risk: medium
+  rationale: >-
+    The networking guide says TCP keepalive defaults mean "it takes a very long time (say, an hour or more) to detect a dead peer" and gives an example configuration (keepalive_time=30, keepalive_intvl=10, keepalive_probes=4) that treats connections as dead after 70 seconds, useful when the operator cannot control client heartbeat settings. It is presented as an example, not a mandate. Risk: the setting is host-wide and affects every TCP socket with SO_KEEPALIVE; more frequent probes add traffic and can drop connections over flaky links.
+  verify: "sysctl net.ipv4.tcp_keepalive_time prints 30 or less"
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+  tests:
+    - fixture: rabbitmq-stock
+      expect: { status: recommend, proposed: "30" }
+    - fixture: rabbitmq-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.rabbitmq.tcp_keepalive_intvl
+  title: net.ipv4.tcp_keepalive_intvl for RabbitMQ (guide example)
+  kind: sysctl
+  param: net.ipv4.tcp_keepalive_intvl
+  domain: network
+  applies:
+    when: 'hasApp("rabbitmq")'
+  recommend: "10"
+  compare: lte
+  namespaced: true
+  risk: medium
+  rationale: >-
+    Part of the networking guide's example keepalive configuration (see app.rabbitmq.tcp_keepalive_time): probes every 10 seconds after the idle period. The guide frames it as an example for detecting dead peers faster. Risk: host-wide, adds probe traffic.
+  verify: "sysctl net.ipv4.tcp_keepalive_intvl prints 10 or less"
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+  tests:
+    - fixture: rabbitmq-stock
+      expect: { status: recommend, proposed: "10" }
+    - fixture: rabbitmq-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.rabbitmq.tcp_keepalive_probes
+  title: net.ipv4.tcp_keepalive_probes for RabbitMQ (guide example)
+  kind: sysctl
+  param: net.ipv4.tcp_keepalive_probes
+  domain: network
+  applies:
+    when: 'hasApp("rabbitmq")'
+  recommend: "4"
+  compare: lte
+  namespaced: true
+  risk: medium
+  rationale: >-
+    Part of the networking guide's example keepalive configuration (see app.rabbitmq.tcp_keepalive_time): 4 unanswered probes, so a connection is considered dead after 70 seconds in total with the other two values. The guide frames it as an example. Risk: host-wide; fewer probes make a connection over a lossy link more likely to be declared dead.
+  verify: "sysctl net.ipv4.tcp_keepalive_probes prints 4 or less"
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+  tests:
+    - fixture: rabbitmq-stock
+      expect: { status: recommend, proposed: "4" }
+    - fixture: rabbitmq-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: app.rabbitmq.listen_backlog
+  title: RabbitMQ listen backlog overflowing; raise tcp_listen_options.backlog with somaxconn
+  kind: runtime
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: 'hasApp("rabbitmq") && rate("TcpExt.ListenOverflows") > 0'
+  advice: >-
+    Accept-queue overflows are happening on this host while RabbitMQ runs. RabbitMQ's tcp_listen_options.backlog defaults to 128 and the guide's large-connection-count example sets it to 4096 ("When pending connection queue length grows beyond this value, connections will be rejected by the operating system. See also net.core.somaxconn"). Set tcp_listen_options.backlog = 4096 in rabbitmq.conf, and keep net.core.somaxconn ({{index .facts.Sysctl "net.core.somaxconn"}}) and net.ipv4.tcp_max_syn_backlog ({{index .facts.Sysctl "net.ipv4.tcp_max_syn_backlog"}}) at 4096 or higher, since the kernel caps the backlog at somaxconn. The same option applies to MQTT and STOMP via the mqtt. and stomp. prefixes.
+  verify: "TcpExt.ListenOverflows rate returns to 0 during reconnect storms"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The application backlog is silently truncated to net.core.somaxconn, so the two must be raised together. The rule applies only while ListenOverflows is increasing, because the setting matters at tens of thousands of connections or reconnect storms, not for steady small deployments. Risk: low; a larger queue holds more half-served connections.
+  sources:
+    - https://raw.githubusercontent.com/rabbitmq/rabbitmq-website/main/docs/networking.md
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: rabbitmq-legacy-backlog
+      expect: { status: recommend }
+    - fixture: rabbitmq-stock
+      expect: { status: not-applicable }
