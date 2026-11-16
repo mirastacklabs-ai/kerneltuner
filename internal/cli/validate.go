@@ -40,6 +40,16 @@ func newValidateCmd(g *globalOpts) *cobra.Command {
 			for _, e := range rules.ValidateWith(rs, srcs, fixturesDir) {
 				report("invalid: %v", e)
 			}
+			cites := rules.CheckCitations(rs)
+			strict, _ := cmd.Flags().GetBool("strict-citations")
+			if strict {
+				for _, pr := range cites.Problems {
+					report("invalid: %s", pr)
+				}
+			} else if cites.RulesWithoutQuotes > 0 {
+				_, _ = fmt.Fprintf(errOut, "warning: %d of %d rules (%d of %d sources) cite no verbatim quote; --strict-citations makes this an error\n",
+					cites.RulesWithoutQuotes, cites.Rules, cites.SourcesWithoutQuote, cites.Sources)
+			}
 			tests := 0
 			for _, r := range rs {
 				tests += len(r.Tests)
@@ -58,5 +68,6 @@ func newValidateCmd(g *globalOpts) *cobra.Command {
 			return err
 		},
 	}
+	cmd.Flags().Bool("strict-citations", false, "treat rule sources without a verbatim quote as errors")
 	return cmd
 }

@@ -8,7 +8,10 @@
   namespaced: true
   risk: medium
   rationale: Small backlog drops connections. Second sentence.
-  sources: [https://docs.kernel.org/networking/ip-sysctl.html]
+  sources:
+    - url: https://docs.kernel.org/networking/ip-sysctl.html
+      section: somaxconn
+      quote: "somaxconn - INTEGER: Limit of socket listen() backlog."
   tests:
     - fixture: minimal
       expect: { status: recommend, proposed: "8192" }

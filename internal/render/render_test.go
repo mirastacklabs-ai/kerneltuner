@@ -13,11 +13,30 @@ import (
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
 	"github.com/mirastacklabs-ai/kerneltuner/internal/facts"
+	"github.com/mirastacklabs-ai/kerneltuner/internal/rules"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
-const src = "https://docs.kernel.org/networking/ip-sysctl.html"
+const (
+	src  = "https://docs.kernel.org/networking/ip-sysctl.html"
+	src2 = "https://kernelnewbies.org/Linux_5.4"
+)
+
+// testCites cites src (with a quote, once with a section) and src2 (bare) for
+// some of the rules in testRecs; the other rules fall back to their Sources.
+func testCites() *Citations {
+	return NewCitations([]rules.Rule{
+		{ID: "net.core.somaxconn", Sources: []rules.SourceRef{
+			{URL: src, Quote: "somaxconn - INTEGER: Limit of socket listen() backlog. Default 4096.", Section: "somaxconn"},
+			{URL: src2}}},
+		{ID: "nic.ring", Sources: []rules.SourceRef{{URL: src2}}},
+		{ID: "anti.thp", Sources: []rules.SourceRef{{URL: src, Quote: "Transparent Hugepage Support can cause latency spikes for some workloads, and a very long quote that has to be wrapped somewhere before it reaches the edge of the terminal."}}},
+	}, []rules.Source{
+		{URL: src, Project: "linux", Title: "Linux kernel: IP sysctl", LastReviewed: "2026-11-16"},
+		{URL: src2, Project: "linux", LastReviewed: "2026-11-16"},
+	})
+}
 
 func testMeta() Meta {
 	return Meta{
@@ -31,6 +50,7 @@ func testMeta() Meta {
 			Tuned:    facts.Tuned{Active: true, Profile: "network-throughput"},
 			Warnings: []string{"could not read /proc/net/netstat"},
 		},
+		Cites: testCites(),
 	}
 }
 

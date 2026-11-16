@@ -5,9 +5,12 @@
 # .link file ([Link] RxBufferSize=, TxBufferSize=, CombinedChannels=), NetworkManager
 # (ethtool.ring-rx, ethtool.channels-combined) or a udev rule.
 
-# nic.channels: Channels — https://docs.kernel.org/networking/ip-sysctl.html
-# nic.ring: RX ring — https://docs.kernel.org/networking/ip-sysctl.html
-# nic.txring: TX ring — https://docs.kernel.org/networking/ip-sysctl.html
+# nic.channels: Channels
+# source: https://docs.kernel.org/networking/ip-sysctl.html
+# nic.ring: RX ring
+# source: https://kernelnewbies.org/Linux_5.4
+# nic.txring: TX ring
+# source: https://docs.kernel.org/networking/ip-sysctl.html
 
 ethtool -G eth0 rx 4096 tx 2048
 ethtool -L eth0 combined 32

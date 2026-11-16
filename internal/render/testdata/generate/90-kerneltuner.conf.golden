@@ -2,8 +2,12 @@
 # Review before applying: these are recommendations, not verified for your workload.
 # Install as /etc/sysctl.d/90-kerneltuner.conf, then: sysctl --system
 
-# net.core.somaxconn: Listen backlog cap — https://docs.kernel.org/networking/ip-sysctl.html
+# net.core.somaxconn: Listen backlog cap
+# source: https://docs.kernel.org/networking/ip-sysctl.html — somaxconn
+#   "somaxconn - INTEGER: Limit of socket listen() backlog. Default 4096."
+# source: https://kernelnewbies.org/Linux_5.4
 net.core.somaxconn = 4096
 
-# net.ipv4.tcp_rmem: TCP receive buffer — https://docs.kernel.org/networking/ip-sysctl.html
+# net.ipv4.tcp_rmem: TCP receive buffer
+# source: https://docs.kernel.org/networking/ip-sysctl.html
 net.ipv4.tcp_rmem = 4096 131072 16777216

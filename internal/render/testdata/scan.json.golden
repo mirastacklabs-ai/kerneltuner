@@ -30,6 +30,24 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "somaxconn - INTEGER: Limit of socket listen() backlog. Default 4096.",
+          "section": "somaxconn",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        },
+        {
+          "url": "https://kernelnewbies.org/Linux_5.4",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -52,6 +70,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -74,6 +102,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -96,6 +134,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -118,6 +166,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -140,6 +198,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -162,6 +230,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -184,6 +262,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://kernelnewbies.org/Linux_5.4",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -206,6 +294,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -228,6 +326,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -250,6 +358,16 @@
       "advice": "Set --max-num-seqs to 256.",
       "verify": "Watch tokens/s",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -272,6 +390,16 @@
       "advice": "",
       "verify": "",
       "sources": [
+        {
+          "url": "https://docs.kernel.org/networking/ip-sysctl.html",
+          "quote": "Transparent Hugepage Support can cause latency spikes for some workloads, and a very long quote that has to be wrapped somewhere before it reaches the edge of the terminal.",
+          "section": "",
+          "project": "linux",
+          "title": "Linux kernel: IP sysctl",
+          "last_reviewed": "2026-11-16"
+        }
+      ],
+      "source_urls": [
         "https://docs.kernel.org/networking/ip-sysctl.html"
       ]
     },
@@ -293,7 +421,8 @@
       "rationale": "",
       "advice": "error: recommend: boom",
       "verify": "",
-      "sources": []
+      "sources": [],
+      "source_urls": []
     }
   ]
 }

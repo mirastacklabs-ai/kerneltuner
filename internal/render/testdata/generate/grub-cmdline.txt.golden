@@ -4,8 +4,10 @@
 # !!! REBOOT REQUIRED: this changes the kernel command line !!!
 #
 
-# cmdline.iommu: IOMMU passthrough — https://docs.kernel.org/networking/ip-sysctl.html
-# cmdline.nosmt: Tickless cores — https://docs.kernel.org/networking/ip-sysctl.html
+# cmdline.iommu: IOMMU passthrough
+# source: https://docs.kernel.org/networking/ip-sysctl.html
+# cmdline.nosmt: Tickless cores
+# source: https://docs.kernel.org/networking/ip-sysctl.html
 
 # Add to /etc/default/grub:
 GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX iommu=pt nohz_full"

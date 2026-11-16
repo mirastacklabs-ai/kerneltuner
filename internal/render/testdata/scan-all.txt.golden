@@ -1,32 +1,34 @@
-kerneltuner v0.0.0-test | kernel 6.8.0-31-generic | CPU EPYC 9654 (2 sockets, 192 cores, 384 threads) | RAM 1536 GiB | accelerators: 1x amd, 2x nvidia | Warnings: 1
+kerneltuner v0.0.0-test | kernel 6.8.0-31-generic
+CPU EPYC 9654 (2 sockets, 192 cores, 384 threads) | RAM 1536 GiB | accelerators: 1x amd, 2x nvidia
+Warnings: 1
 
 == NETWORK ==
 STATUS     RULE                             TARGET  CURRENT -> PROPOSED                          RISK    EVIDENCE
-recommend  net.core.somaxconn                       128 -> 4096                                  low     TcpExt.ListenOverflows=3.2 (> 0)
+recommend  net.core.somaxconn                       128 -> 4096                                  low     TcpExt.ListenOverflows=3.2 (> 0) [1,2]
     Small backlog drops connections.
-recommend  nic.ring                         eth0    256 -> 4096                                  low
+recommend  nic.ring                         eth0    256 -> 4096                                  low     [2]
     Absorb bursts.
-recommend  nic.txring                       eth0    256 -> 2048                                  low
+recommend  nic.txring                       eth0    256 -> 2048                                  low     [3]
     Absorb bursts.
-recommend  nic.channels                     eth0    4 -> 32                                      low
+recommend  nic.channels                     eth0    4 -> 32                                      low     [3]
     One per core.
-recommend  net.ipv4.tcp_rmem                        4096 131072 6291456 -> 4096 131072 16777216  medium
+recommend  net.ipv4.tcp_rmem                        4096 131072 6291456 -> 4096 131072 16777216  medium  [3]
     Long fat pipes need larger buffers.
-ok         net.ipv4.tcp_congestion_control          bbr                                          low
+ok         net.ipv4.tcp_congestion_control          bbr                                          low     [3]
     BBR.
 
 == LIMITS ==
 STATUS     RULE            TARGET         CURRENT -> PROPOSED  RISK  EVIDENCE
-recommend  limits.nofile   nginx.service  1024 -> 65536        low
+recommend  limits.nofile   nginx.service  1024 -> 65536        low   [3]
     Default is too low.
-recommend  limits.memlock  vllm           65536 -> infinity    low
+recommend  limits.memlock  vllm           65536 -> infinity    low   [3]
     Pinned buffers.
 
 == MEMORY ==
 STATUS   RULE           TARGET  CURRENT -> PROPOSED  RISK    EVIDENCE
-firing   anti.thp               -                    medium
+firing   anti.thp               -                    medium  [4]
     THP stalls latency-sensitive databases.
-managed  vm.swappiness          60 -> 10             low
+managed  vm.swappiness          60 -> 10             low     [3]
     tuned profile sets vm.swappiness=10
 
 == CPU ==
@@ -36,16 +38,28 @@ error   broken          -                    low
 
 == STORAGE ==
 STATUS     RULE               TARGET   CURRENT -> PROPOSED  RISK  EVIDENCE
-recommend  storage.scheduler  nvme0n1  mq-deadline -> none  low
+recommend  storage.scheduler  nvme0n1  mq-deadline -> none  low   [3]
     NVMe has its own queues.
 
 == AI ==
 STATUS     RULE           TARGET  CURRENT -> PROPOSED  RISK    EVIDENCE
-recommend  rt.vllm        vllm    -                    low
+recommend  rt.vllm        vllm    -                    low     [3]
     Throughput.
-recommend  cmdline.iommu          (unset) -> pt        medium
+recommend  cmdline.iommu          (unset) -> pt        medium  [3]
     [reboot required] Lower DMA overhead.
-recommend  cmdline.nosmt          -                    high
+recommend  cmdline.nosmt          -                    high    [3]
     [reboot required] Fewer interrupts.
 
+References
+[1] Linux kernel: IP sysctl — somaxconn (reviewed 2026-11-16)
+    "somaxconn - INTEGER: Limit of socket listen() backlog. Default 4096."
+    https://docs.kernel.org/networking/ip-sysctl.html
+[2] linux (reviewed 2026-11-16)
+    https://kernelnewbies.org/Linux_5.4
+[3] Linux kernel: IP sysctl (reviewed 2026-11-16)
+    https://docs.kernel.org/networking/ip-sysctl.html
+[4] Linux kernel: IP sysctl (reviewed 2026-11-16)
+    "Transparent Hugepage Support can cause latency spikes for some workloads, and a very long quote
+    that has to be wrapped somewhere before it reaches the edge of the terminal."
+    https://docs.kernel.org/networking/ip-sysctl.html
 warning: could not read /proc/net/netstat

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"unicode/utf8"
 
 	"github.com/mirastacklabs-ai/kerneltuner/internal/fixture"
 )
@@ -210,9 +211,12 @@ func validateRule(r *Rule, registered map[string]bool, checkFixtures bool, check
 	if len(r.Sources) == 0 {
 		add("at least one source URL is required")
 	}
-	for _, u := range r.Sources {
-		if !registered[u] {
-			add("source %q is not registered in any sources.yaml", u)
+	for _, s := range r.Sources {
+		if !registered[s.URL] {
+			add("source %q is not registered in any sources.yaml", s.URL)
+		}
+		if n := utf8.RuneCountInString(s.Quote); n > MaxQuoteLen {
+			add("source %q: quote is %d characters, the limit is %d", s.URL, n, MaxQuoteLen)
 		}
 	}
 
@@ -238,4 +242,34 @@ func need(ok bool, add func(string, ...any), format string, a ...any) {
 	if !ok {
 		add(format, a...)
 	}
+}
+
+// CitationReport summarises rule sources that lack a verbatim quote.
+type CitationReport struct {
+	Rules               int      // rules examined
+	RulesWithoutQuotes  int      // rules with at least one quote-less source
+	Sources             int      // rule source entries examined
+	SourcesWithoutQuote int      // of those, the ones lacking a quote
+	Problems            []string // one line per rule with quote-less sources
+}
+
+// CheckCitations reports the rule sources lacking a quote. It is a warning by
+// default; `validate --strict-citations` turns Problems into errors.
+func CheckCitations(rs []Rule) CitationReport {
+	rep := CitationReport{Rules: len(rs)}
+	for _, r := range rs {
+		missing := 0
+		for _, s := range r.Sources {
+			rep.Sources++
+			if strings.TrimSpace(s.Quote) == "" {
+				missing++
+			}
+		}
+		if missing > 0 {
+			rep.RulesWithoutQuotes++
+			rep.SourcesWithoutQuote += missing
+			rep.Problems = append(rep.Problems, fmt.Sprintf("%s: %d of %d source(s) have no quote", r.ID, missing, len(r.Sources)))
+		}
+	}
+	return rep
 }

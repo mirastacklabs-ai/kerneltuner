@@ -139,7 +139,7 @@ Gauges: conntrack.\*, fs.file_nr.\*, sockstat.\*, psi.\*, plus `vmstat.nr_*` and
 
 ### File layout
 - `rules/<area>/<pack>/*.yaml`, where area is `kernel`, `ai`, `apps`, `antipatterns` or `ecosystem`. Each file holds a YAML list of rules.
-- Every pack directory has a `sources.yaml`: a list of `{url, project, covers, last_reviewed}`. Every rule `sources` URL must appear in some `sources.yaml`.
+- Every pack directory has a `sources.yaml`: a list of `{url, project, title?, covers, last_reviewed}`. Every rule `sources` URL must appear in some `sources.yaml`. A rule source is a URL string or `{url, quote, section}` (see "Citations" under Engine amendments).
 - `rules/ecosystem/tuned.yaml` and `rules/ecosystem/bpftune.yaml` are data, not rules. They map `tuned` profile → `{sysctl: value}` and list the sysctls bpftune tunes. The advisor uses them for `managed` status.
 - `rules/embed.go`: `package rulesfs; //go:embed all:kernel all:ai all:apps all:antipatterns all:ecosystem; var FS embed.FS`. Directories must exist, with `.gitkeep` if empty.
 
@@ -225,11 +225,11 @@ rates:  { TcpExt.ListenOverflows: 3.2 } # injected per-second rates
 
 ## CLI
 - **Global flags:** `--root`, `--rules-dir`, `--domain`, `--pack`, `--json`.
-- `scan [--sample DUR] [--all]`: `--all` includes ok, not-applicable and managed results.
+- `scan [--sample DUR] [--all] [--format text|json|md] [--no-citations]`: `--all` includes ok, not-applicable and managed results. Text and md carry footnote markers and a References section; `--no-citations` hides them.
 - `explain <rule-id|param>`
 - `generate --format sysctl|limits|systemd|tuned|cmdline|nic|runtime|all [--out DIR]`: prints to stdout when `--out` is not given.
-- `sources [--all]`
-- `validate`: checks the schema, that sources are registered, and that tests reference existing fixtures.
+- `sources [--all]`; `sources --check [--only PACK] [--json]` is the opt-in network check (exit 1 on any failure).
+- `validate [--strict-citations]`: checks the schema, that sources are registered, that quotes are at most 300 characters, and that tests reference existing fixtures. A source without a quote is a warning, an error under `--strict-citations`.
 - `capture -o FILE [--fixture]`: `--fixture` emits a fixture.yaml. Strips cmdline args beyond argv[0..1], environ, and any file not on the allowlist.
 - `agent [--interval 15s] [--state /run/kerneltuner/state.json]`
 - `status [--state ...]`
@@ -286,7 +286,7 @@ Recommendations with status `recommend` or `firing`, kinds `sysctl`, `sysfs`, `l
 - all `gte`: the per-field max of the proposals (`infinity` ranks highest); all `lte`: the min. Integers compare exactly.
 - `eq`, `set`, mixed modes, or non-numeric proposals with different values: the highest-scored recommendation wins (ties: the earlier one) and the conflict is a warning: a `# CONFLICT ...` comment in generated files, a stderr warning from `generate`, `Plan.Warnings` from `apply`.
 - The merged recommendation keeps the first member's position and the highest-scored one's fields, `Contributors` lists every rule id (the generated comment shows them all) and `Sources` is the union. `apply` ops carry `Rules`.
-- The text report (`render.Text`) adds `conflicts: N setting(s) have disagreeing proposals` plus one indented line per setting whenever proposals differ (`advisor.Conflicts`).
+- The text and md reports (`render.Text`, `render.Markdown`) open with a `CONFLICT: N setting(s) have disagreeing proposals` block, one line per setting, whenever proposals differ (`advisor.Conflicts`).
 
 ### CLI
 - Hidden `--fixture NAME` on `scan`, `generate` and `apply`: materializes `testdata/fixtures/NAME` to a temp dir (removed on exit), uses it as the root and merges the fixture's `values`/`rates` into the sampled metrics.
@@ -294,6 +294,15 @@ Recommendations with status `recommend` or `firing`, kinds `sysctl`, `sysfs`, `l
 
 ### Golden tests
 `advisor.RunGolden` materializes and collects each fixture once per call (cache keyed by fixture name, loaded in parallel, removed in parallel); `rules.ValidateWith` parses each fixture once. The whole `rules` package test went from about 35s to about 11s under load.
+
+### Citations
+Every recommendation carries its evidence: which upstream doc says so, and the exact words it uses.
+- **Schema.** A rule's `sources:` items are a plain URL string or `{url, quote, section}` (`rules.SourceRef`; strict: unknown keys are an error). `quote` is a short verbatim excerpt (at most 300 characters) from that page which supports the rule; `section` is an optional heading or anchor. The registry entry (`rules.Source`) gains an optional `title`; the loader sets `Source.Pack`. `Rule.SourceURLs()` gives the URLs, and `advisor.Recommendation.Sources` stays `[]string` (URLs only).
+- **Resolution.** `render.Citations` (`render.NewCitations(rules, registry)`, carried in `render.Meta.Cites`) maps a recommendation to `[]render.Cite{URL, Quote, Section, Project, Title, LastReviewed}` through its rule id, or every contributor's rule id for a reconciled one. A nil `Citations` falls back to the bare URLs.
+- **Validation.** Every source URL must be registered (unchanged); a quote over 300 characters is an error; a source without a quote is a warning (`validate` prints the counts to stderr) and an error under `validate --strict-citations`. Strict becomes the default once quotes are backfilled.
+- **scan.** Findings end in `[n]` or `[n,m]`. Numbers are assigned in reading order (conflicts block first, then findings by domain). A reference is a distinct (URL, section, quote) triple, listed once under References as `[n] <title or project> — <section> (reviewed <date>)`, the quote and the URL. JSON findings carry `sources: [{url, quote, section, project, title, last_reviewed}]`; the old string list moved to `source_urls`. `explain` shows the same details per source (JSON: same two fields).
+- **generate.** Every setting's comment lists every contributing rule id and every source of those rules: `# source: <url> — <section>` and the quote below it (sysctl.d, tuned, systemd drop-ins, limits.d, cmdline, nic; runtime.md gets a Sources list).
+- **sources --check.** Package `internal/sourcecheck`: the only network code, opt-in. One GET per registered URL (15s timeout, concurrency 4, `User-Agent: kerneltuner-sources-check/<version>`, nothing else sent). The body is converted from HTML to text, entities decoded, typographic quotes and dashes folded to ASCII and all whitespace removed on both sides before a quote is looked for (case-sensitive). Verdicts: `OK`, `QUOTE-MISSING`, `REDIRECTED` (final URL on another host or path; the final URL is reported), `HTTP-ERROR`, `UNREACHABLE`. `.github/workflows/sources-check.yml` runs it weekly and maintains one `sources-drift` issue.
 
 ## Engine amendments (fix pass 2)
 Backward compatible additions; no rule YAML or existing fixture changed. Rule-author guidance is in `rules/README.md` ("Expression builtins and new helpers").

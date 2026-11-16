@@ -1,5 +1,6 @@
 - url: https://docs.kernel.org/networking/ip-sysctl.html
   project: linux
+  title: "Linux kernel: IP sysctl"
   covers: ip sysctl
   last_reviewed: "2026-01-01"
 - url: https://example.com/unused

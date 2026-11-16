@@ -4,5 +4,6 @@
 # '*' covers all users; narrow it to the app's user.
 
 # limits.memlock (vllm): Locked memory for vllm
+# source: https://docs.kernel.org/networking/ip-sysctl.html
 *	soft	memlock	unlimited
 *	hard	memlock	unlimited

@@ -3,5 +3,6 @@
 # Then: systemctl daemon-reload && systemctl restart nginx.service
 
 [Service]
-# limits.nofile: Open files for nginx — https://docs.kernel.org/networking/ip-sysctl.html
+# limits.nofile: Open files for nginx
+# source: https://docs.kernel.org/networking/ip-sysctl.html
 LimitNOFILE=65536
