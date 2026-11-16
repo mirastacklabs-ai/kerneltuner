@@ -38,6 +38,7 @@ type Facts struct {
 	Modules    map[string]bool // /proc/modules names
 	Procs      []Proc          // all processes
 	Swaps      []Swap          // /proc/swaps
+	Mounts     []Mount         // /proc/self/mounts (else /proc/mounts), in file order
 	Tuned      Tuned
 	Bpftune    bool // a process with comm "bpftune" is running
 	Irqbalance bool
@@ -51,6 +52,10 @@ type Kernel struct {
 	Cmdline             string
 	CmdlineArgs         map[string]string // "iommu"->"pt", flags -> ""
 	AvailableCongestion []string          // net.ipv4.tcp_available_congestion_control
+	// Config is the kernel build config from /proc/config.gz or
+	// <root>/boot/config-<release>: "CONFIG_BPF_JIT" -> "y"|"m"|"n"|value ("n"
+	// for "is not set"). Nil when neither file is readable.
+	Config map[string]string
 }
 
 // Host describes virtualization, container and cloud environment.
@@ -167,6 +172,10 @@ type Proc struct {
 	NoFileHard  uint64
 	MemlockSoft uint64
 	MemlockHard uint64
+	NProcSoft   uint64 // Max processes
+	NProcHard   uint64
+	CoreSoft    uint64 // Max core file size
+	OOMScoreAdj int    // /proc/<pid>/oom_score_adj
 	OpenFDs     int
 	Unit        string // systemd unit from /proc/<pid>/cgroup, "" if none
 	Container   string // container runtime from the cgroup path: docker|containerd|crio|podman, "" if none

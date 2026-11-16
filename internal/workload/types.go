@@ -17,6 +17,11 @@ type App struct {
 	NoFileSoft  uint64 // minimum across the app's PIDs
 	NoFileHard  uint64
 	MemlockSoft uint64
+	// NProcSoft is the minimum non-zero soft "Max processes" across the app's PIDs.
+	NProcSoft uint64
+	// OOMScoreAdj is the maximum /proc/<pid>/oom_score_adj across the app's PIDs
+	// (the least protected process decides whether the app is OOM-protected).
+	OOMScoreAdj int
 	MaxOpenFDs  int
 	// NoFileSoftMax is the maximum soft nofile across the app's PIDs: workers
 	// raised above a low-limit master show here.

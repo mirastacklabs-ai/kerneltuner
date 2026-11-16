@@ -23,7 +23,7 @@ var (
 	// NICParams are the valid params of kind nic.
 	NICParams = []string{"combined", "rx_ring", "tx_ring"}
 	// LimitParams are the valid params of kind limit.
-	LimitParams = []string{"LimitNOFILE", "LimitMEMLOCK"}
+	LimitParams = []string{"LimitNOFILE", "LimitMEMLOCK", "LimitNPROC"}
 )
 
 var (

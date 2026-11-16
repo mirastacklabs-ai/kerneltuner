@@ -216,6 +216,12 @@ func Detect(r facts.Root, f *facts.Facts) (*Workload, error) {
 			if i == 0 || p.MemlockSoft < app.MemlockSoft {
 				app.MemlockSoft = p.MemlockSoft
 			}
+			if p.NProcSoft != 0 && (app.NProcSoft == 0 || p.NProcSoft < app.NProcSoft) {
+				app.NProcSoft = p.NProcSoft
+			}
+			if i == 0 || p.OOMScoreAdj > app.OOMScoreAdj {
+				app.OOMScoreAdj = p.OOMScoreAdj
+			}
 			if p.OpenFDs > app.MaxOpenFDs {
 				app.MaxOpenFDs = p.OpenFDs
 			}

@@ -60,7 +60,7 @@ func TestTextShowsConflictsLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := b.String()
-	if !strings.Contains(out, "CONFLICT: 3 setting(s)") || !strings.Contains(out, "vm.max_map_count") ||
+	if !strings.Contains(out, "CONFLICT: 1 setting has") || !strings.Contains(out, "a.cc proposes bbr (chosen)") ||
 		strings.Index(out, "CONFLICT:") > strings.Index(out, "== MEMORY ==") {
 		t.Errorf("no conflicts line:\n%s", out)
 	}

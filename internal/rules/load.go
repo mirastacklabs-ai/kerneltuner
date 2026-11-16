@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"path"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -47,7 +48,7 @@ func Load(fsys fs.FS) ([]Rule, Ecosystem, []Source, error) {
 			if path.Base(p) == "sources.yaml" {
 				var s []Source
 				if err := decodeStrict(b, &s); err != nil {
-					return fmt.Errorf("%s: %w", p, err)
+					return yamlErr(p, err)
 				}
 				for i := range s {
 					s[i].Pack = path.Dir(p)
@@ -57,7 +58,7 @@ func Load(fsys fs.FS) ([]Rule, Ecosystem, []Source, error) {
 			}
 			var list []Rule
 			if err := decodeStrict(b, &list); err != nil {
-				return fmt.Errorf("%s: %w", p, err)
+				return yamlErr(p, err)
 			}
 			for i := range list {
 				list[i].Pack = path.Dir(p)
@@ -74,6 +75,48 @@ func Load(fsys fs.FS) ([]Rule, Ecosystem, []Source, error) {
 		return nil, Ecosystem{}, nil, err
 	}
 	return rs, eco, srcs, nil
+}
+
+// CheckPacks reports an error when fsys holds none of the pack areas (kernel/,
+// ai/, apps/, antipatterns/). Load itself accepts such a tree (an empty rule
+// set), which made `validate --rules-dir` on a wrong directory print "OK: 0
+// rules"; validate calls this first. Typical causes are a missing directory
+// and a copy made with `cp -r rules DEST`, which nests the packs in DEST/rules.
+func CheckPacks(fsys fs.FS) error {
+	for _, area := range rootAreas {
+		if _, err := fs.Stat(fsys, area); err == nil {
+			return nil
+		}
+	}
+	hint := ""
+	if _, err := fs.Stat(fsys, "rules"); err == nil {
+		hint = `; it has a "rules" subdirectory, point at that instead`
+	}
+	return fmt.Errorf("no rule packs found: none of %s exists in the rules directory%s", strings.Join(rootAreas, "/, ")+"/", hint)
+}
+
+// yamlErr turns a yaml.v3 error into "file:line: message" lines (one per
+// problem), so a broken sources.yaml or rule file is named with its line.
+func yamlErr(file string, err error) error {
+	var msgs []string
+	var te *yaml.TypeError
+	if errors.As(err, &te) {
+		msgs = te.Errors
+	} else {
+		msgs = []string{strings.TrimPrefix(err.Error(), "yaml: ")}
+	}
+	var lines []string
+	for _, m := range msgs {
+		m = strings.TrimPrefix(strings.TrimSpace(m), "yaml: ")
+		if rest, ok := strings.CutPrefix(m, "line "); ok {
+			if n, msg, ok := strings.Cut(rest, ": "); ok {
+				lines = append(lines, fmt.Sprintf("%s:%s: %s", file, n, msg))
+				continue
+			}
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", file, m))
+	}
+	return errors.New(strings.Join(lines, "\n"))
 }
 
 // decodeStrict unmarshals YAML rejecting unknown fields. Empty input is fine.

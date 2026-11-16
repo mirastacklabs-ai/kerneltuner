@@ -200,8 +200,11 @@ func Limits(recs []advisor.Recommendation, m Meta) (dropins map[string]string, l
 
 func limitsConfLine(r advisor.Recommendation) (item, val string) {
 	item = "nofile"
-	if strings.EqualFold(r.Param, "LimitMEMLOCK") {
+	switch {
+	case strings.EqualFold(r.Param, "LimitMEMLOCK"):
 		item = "memlock"
+	case strings.EqualFold(r.Param, "LimitNPROC"):
+		item = "nproc"
 	}
 	if r.Proposed == "infinity" || r.Proposed == "unlimited" {
 		return item, "unlimited"

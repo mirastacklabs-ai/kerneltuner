@@ -5,7 +5,18 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/mirastacklabs-ai/kerneltuner/internal/advisor"
 )
+
+func TestLimitsNPROC(t *testing.T) {
+	r := advisor.Recommendation{RuleID: "app.x.nproc", Kind: "limit", Param: "LimitNPROC", Target: "x", Proposed: "131072",
+		Title: "Threads", Status: advisor.StatusRecommend}
+	_, limitsD := Limits([]advisor.Recommendation{r}, Meta{})
+	if !strings.Contains(limitsD, "*\tsoft\tnproc\t131072\n*\thard\tnproc\t131072\n") {
+		t.Errorf("limits.d:\n%s", limitsD)
+	}
+}
 
 func TestTextFootnotesAndReferences(t *testing.T) {
 	var b bytes.Buffer

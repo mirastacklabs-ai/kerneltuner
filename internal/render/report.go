@@ -15,13 +15,12 @@ const textWidth = 100
 
 // view is a report prepared for rendering: the findings to show, their
 // conflicts and the footnote numbers of both, assigned in reading order
-// (conflicts first, then findings by domain).
+// (findings by domain).
 type view struct {
-	shown     []advisor.Recommendation
-	marks     [][]int // footnote numbers per shown finding
-	conflicts []advisor.Conflict
-	cmarks    [][]int // footnote numbers per conflict
-	fn        *footnotes
+	shown    []advisor.Recommendation
+	marks    [][]int // footnote numbers per shown finding
+	conflict string  // advisor.ConflictBlock, empty when none
+	fn       *footnotes
 }
 
 func newView(recs []advisor.Recommendation, m Meta, all bool) *view {
@@ -37,14 +36,7 @@ func newView(recs []advisor.Recommendation, m Meta, all bool) *view {
 		}
 		return v.shown[i].Score > v.shown[j].Score
 	})
-	v.conflicts = advisor.Conflicts(recs)
-	for _, c := range v.conflicts {
-		var ns []int
-		if !m.NoCitations {
-			ns = v.fn.mark(m.Cites.For(advisor.Recommendation{Contributors: c.Rules}))
-		}
-		v.cmarks = append(v.cmarks, ns)
-	}
+	v.conflict = advisor.ConflictBlock(advisor.Conflicts(recs))
 	for _, r := range v.shown {
 		var ns []int
 		if !m.NoCitations {
@@ -88,10 +80,6 @@ func reasonOf(r advisor.Recommendation) string {
 	return reason
 }
 
-func conflictLine(c advisor.Conflict) string {
-	return c.String()
-}
-
 // Text writes the human-readable report, grouped by domain and sorted by
 // score. Without all, only recommend, firing and error results are shown.
 // Findings carry footnote markers; a References section lists the sources.
@@ -100,16 +88,8 @@ func Text(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) error {
 	var b strings.Builder
 	b.WriteString(strings.Join(summaryLines(m, textWidth), "\n") + "\n\n")
 
-	if len(v.conflicts) > 0 {
-		fmt.Fprintf(&b, "CONFLICT: %d setting(s) have disagreeing proposals; generate and apply merge them\n", len(v.conflicts))
-		for i, c := range v.conflicts {
-			line := "  " + conflictLine(c)
-			if mk := markers(v.cmarks[i]); mk != "" {
-				line += " " + mk
-			}
-			b.WriteString(line + "\n")
-		}
-		b.WriteString("\n")
+	if v.conflict != "" {
+		b.WriteString(v.conflict + "\n")
 	}
 	if len(v.shown) == 0 {
 		b.WriteString("Nothing to recommend.\n")
@@ -202,14 +182,9 @@ func Markdown(w io.Writer, recs []advisor.Recommendation, m Meta, all bool) erro
 	}
 	b.WriteString("\n")
 
-	if len(v.conflicts) > 0 {
-		fmt.Fprintf(&b, "> **CONFLICT**: %d setting(s) have disagreeing proposals; generate and apply merge them.\n>\n", len(v.conflicts))
-		for i, c := range v.conflicts {
-			line := "> - " + conflictLine(c)
-			if mk := markers(v.cmarks[i]); mk != "" {
-				line += " " + mk
-			}
-			b.WriteString(line + "\n")
+	if v.conflict != "" {
+		for _, l := range strings.Split(strings.TrimRight(v.conflict, "\n"), "\n") {
+			b.WriteString("> " + strings.Replace(l, "CONFLICT:", "**CONFLICT**:", 1) + "\n")
 		}
 		b.WriteString("\n")
 	}
