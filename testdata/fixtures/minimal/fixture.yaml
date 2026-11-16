@@ -1,0 +1,9 @@
+description: Minimal synthetic host, kernel 6.8, a few sysctls
+synthetic: true
+files:
+  proc/sys/kernel/osrelease: "6.8.0-31-generic\n"
+  proc/sys/net/core/somaxconn: "4096\n"
+  proc/sys/net/ipv4/tcp_congestion_control: "cubic\n"
+  proc/sys/vm/swappiness: "60\n"
+values: { conntrack.count: 1200 }
+rates: { TcpExt.ListenOverflows: 3.2 }
