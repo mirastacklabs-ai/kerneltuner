@@ -61,9 +61,9 @@ jobs:
             echo "A source is REDIRECTED to another host, unreachable, an HTTP error, or no longer contains a quote a rule cites. Re-read the page, then fix the rule's quote or the registry URL, and bump \`last_reviewed\`."
             echo
             echo '~~~~'
-            # drop OK and WARN lines; strip fence-like runs so text cannot break out
+            # drop OK and WARN-MOVED lines; strip fence-like runs so text cannot break out
             # shellcheck disable=SC2016
-            grep -vE '^(OK|WARN)' sources-report.txt | sed 's/~~~~*/~/g; s/```*/`/g' | head -c 60000
+            grep -v -e '^OK ' -e '^WARN-MOVED' sources-report.txt | sed 's/~~~~*/~/g; s/```*/`/g' | head -c 60000
             echo '~~~~'
           } > issue-body.md
           if [ -n "${existing}" ]; then
