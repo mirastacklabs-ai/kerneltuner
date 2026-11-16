@@ -1,0 +1,5 @@
+description: "web-16c-64g-nginx with 26000 TIME_WAIT sockets against a 28232-port ephemeral range, stock sysctls"
+synthetic: true
+extends: web-16c-64g-nginx
+values:
+  "sockstat.tcp.tw": 26000

@@ -1,0 +1,263 @@
+- id: net.ipv4.tcp_rmem
+  title: TCP receive buffer autotuning ceiling
+  kind: sysctl
+  param: net.ipv4.tcp_rmem
+  domain: network
+  applies:
+    when: >-
+      facts.Memory.TotalBytes >= bytes("16G") && any(facts.NICs, !#.Virtual && #.SpeedMbps >= 10000)
+  recommend: "[current[0], current[1], max(current[2], 16777216)]"
+  compare: gte
+  namespaced: true
+  risk: medium
+  rationale: >-
+    tcp_rmem[2] is the ceiling of receive-buffer autotuning (it is not capped by rmem_max). The kernel picks
+    it at boot from RAM, between 131072 and 32 MiB, so a host with a lower figure than the 16 MiB used by the
+    tuned network-throughput profile has less than that room per socket. A 10 Gbit/s or faster NIC on a host
+    with at least 16 GiB is the proxy used here for paths whose bandwidth-delay product can exceed a few MiB;
+    the rule cannot see RTT, so check with `ss -tmi` before applying. Worst-case memory is sockets x ceiling
+    and counts against tcp_mem. Only the third field is raised, and never lowered. Both tuned and bpftune manage
+    this value.
+  verify: "ss -tmi on busy long-RTT connections shows rcv_space growing past the old ceiling; tcp_mem pressure does not appear"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+    - https://github.com/redhat-performance/tuned/tree/master/profiles
+    - https://github.com/oracle/bpftune
+  tests:
+    - fixture: web-16c-64g-nginx
+      expect: { status: recommend, proposed: "4096 131072 16777216" }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: bpftune-tuned-host
+      expect: { status: managed }
+    - fixture: container-k8s-redis
+      expect: { status: not-applicable }
+
+- id: net.ipv4.tcp_wmem
+  title: TCP send buffer autotuning ceiling
+  kind: sysctl
+  param: net.ipv4.tcp_wmem
+  domain: network
+  applies:
+    when: >-
+      facts.Memory.TotalBytes >= bytes("16G") && any(facts.NICs, !#.Virtual && #.SpeedMbps >= 10000)
+  recommend: "[current[0], current[1], max(current[2], 16777216)]"
+  compare: gte
+  namespaced: true
+  risk: medium
+  rationale: >-
+    tcp_wmem[2] is the ceiling of send-buffer autotuning. The kernel computes it at boot as
+    max(64 KiB, min(4 MiB, RAM-derived limit)), so the stock ceiling is at most 4 MiB, while the tuned
+    network-throughput profile uses 16 MiB. A 10 Gbit/s or faster NIC on a host with at least 16 GiB is the
+    proxy used here for high bandwidth-delay paths; the rule cannot see RTT, so check with `ss -tmi` first.
+    A larger send buffer costs memory per socket and can add send-side queueing delay (pair it with
+    tcp_notsent_lowat for latency-sensitive servers). Only the third field is raised.
+  verify: "ss -tmi on busy long-RTT connections shows the send queue growing past the old ceiling; cwnd is no longer buffer-limited"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+    - https://github.com/redhat-performance/tuned/tree/master/profiles
+    - https://github.com/oracle/bpftune
+  tests:
+    - fixture: web-16c-64g-nginx
+      expect: { status: recommend, proposed: "4096 16384 16777216" }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: container-k8s-redis
+      expect: { status: not-applicable }
+
+- id: net.ipv4.tcp_congestion_control
+  title: Switch to BBR on lossy paths
+  kind: sysctl
+  param: net.ipv4.tcp_congestion_control
+  domain: network
+  applies:
+    kernel: ">=4.9"
+    when: 'contains(facts.Kernel.AvailableCongestion, "bbr")'
+  recommend: >-
+    (rate("Tcp.OutSegs") > 0 && rate("Tcp.RetransSegs") / rate("Tcp.OutSegs") > 0.015) ? "bbr" : current
+  compare: eq
+  evidence:
+    - metric: Tcp.RetransSegs
+      rate_gt: 0
+  namespaced: true
+  risk: medium
+  rationale: >-
+    BBR arrived in Linux 4.9 and needs the tcp_bbr module (or CONFIG_TCP_CONG_BBR) to be listed in
+    tcp_available_congestion_control. CUBIC, the usual default, treats loss as congestion; BBR models bandwidth
+    and RTT instead, so it holds throughput on lossy paths. bpftune switches to BBR when loss exceeds about 1.5%,
+    and this rule uses the same threshold: it only proposes BBR when retransmitted segments exceed 1.5% of
+    segments sent. Without that evidence an existing choice is left alone. BBR is the sender's choice, and it
+    competes unevenly with loss-based flows on a shared bottleneck, so roll it out gradually.
+  verify: "Tcp.RetransSegs / Tcp.OutSegs falls and throughput on the affected paths rises; `ss -ti` shows bbr"
+  sources:
+    - https://kernelnewbies.org/Linux_4.9
+    - https://github.com/oracle/bpftune
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: network-lossy-bbr
+      expect: { status: recommend, proposed: "bbr" }
+    - fixture: network-lossy-bbr-bpftune
+      expect: { status: managed }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+
+- id: net.core.default_qdisc
+  title: Use fq with BBR
+  kind: sysctl
+  param: net.core.default_qdisc
+  domain: network
+  applies:
+    kernel: ">=4.13"
+    when: 'sysctl("net.ipv4.tcp_congestion_control") == "bbr"'
+  recommend: '"fq"'
+  compare: eq
+  namespaced: false
+  risk: low
+  rationale: >-
+    The BBR source says it can use the fq qdisc with pacing enabled; otherwise the TCP stack falls back to
+    internal pacing with one high-resolution timer per socket, which may use more resources. Linux 4.13 added
+    that internal pacing, so BBR works without fq there, but fq is cheaper. default_qdisc applies only to
+    qdiscs created afterwards (interfaces brought up after the change, and the leaves of an mq root), so
+    existing interfaces need `tc qdisc replace`. Loopback and veth ignore it. Before 4.13 this pack has no
+    verified guidance, so the rule stays silent.
+  verify: "`tc qdisc show dev <nic>` lists fq on the interfaces carrying BBR traffic"
+  sources:
+    - https://raw.githubusercontent.com/torvalds/linux/master/net/ipv4/tcp_bbr.c
+    - https://kernelnewbies.org/Linux_4.13
+    - https://docs.kernel.org/admin-guide/sysctl/net.html
+  tests:
+    - fixture: network-bbr-default-qdisc
+      expect: { status: recommend, proposed: "fq" }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+
+- id: net.ipv4.ip_local_port_range
+  title: Ephemeral port range
+  kind: sysctl
+  param: net.ipv4.ip_local_port_range
+  domain: network
+  recommend: >-
+    let size = current[1] - current[0] + 1;
+    let ports = filter(workload.ListenPorts, # < 32768);
+    let lo = max(1024, sysctlNum("net.ipv4.ip_unprivileged_port_start"), len(ports) == 0 ? 0 : max(ports) + 1);
+    metric("sockstat.tcp.tw") * 2 > size ? [min(current[0], lo), max(current[1], 65535)] : current
+  compare: eq
+  evidence:
+    - metric: sockstat.tcp.tw
+      value_gt: 20000
+  namespaced: true
+  risk: medium
+  rationale: >-
+    The default range is 32768 to 60999 (about 28k ports). Outbound connections to one destination address
+    and port need a distinct local port each, and TIME_WAIT sockets hold theirs for 60 seconds. The rule uses
+    "TIME_WAIT sockets exceed half the range" as a proxy for exhaustion, because the kernel exposes no
+    verified counter for it; the real symptom is EADDRNOTAVAIL on connect(). It proposes widening to 65535
+    and moving the lower bound down, but never below 1024, ip_unprivileged_port_start, or the highest local
+    listening port under 32768, since the docs require the range to sit at or above ip_unprivileged_port_start.
+    The gain is under 2x and ports of other services that are not listening yet can collide, so list them
+    in ip_local_reserved_ports. More source IPs or tcp_tw_reuse often help more.
+  verify: "connect() stops failing with EADDRNOTAVAIL; `ss -s` TIME_WAIT count stays below half the range"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: network-port-exhaustion
+      expect: { status: recommend, proposed: "1024 65535" }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+
+- id: net.ipv4.tcp_tw_reuse
+  title: Reuse TIME_WAIT sockets for outbound connections
+  kind: sysctl
+  param: net.ipv4.tcp_tw_reuse
+  domain: network
+  recommend: >-
+    let r = split(sysctl("net.ipv4.ip_local_port_range"), " ");
+    let size = len(r) == 2 ? float(r[1]) - float(r[0]) + 1 : 28232;
+    (metric("sockstat.tcp.tw") * 2 > size && sysctlNum("net.ipv4.tcp_timestamps") == 1) ? 1 : current
+  compare: eq
+  evidence:
+    - metric: sockstat.tcp.tw
+      value_gt: 20000
+  namespaced: true
+  risk: medium
+  rationale: >-
+    The value is 0, 1 or 2 (2 means loopback only) and the default has been 2 since Linux 4.18. Setting 1
+    lets the kernel reuse a TIME_WAIT socket for a new outbound connection when the TCP timestamp (PAWS) check
+    makes it safe, which relieves ephemeral port exhaustion on clients and proxies that open many connections
+    to the same destination. It does nothing for TIME_WAIT created by inbound connections on a server. The
+    kernel docs warn that it should not be changed without expert advice, so the rule proposes it only
+    when TIME_WAIT sockets exceed half of the local port range and tcp_timestamps is 1 (PAWS needs timestamps).
+  verify: "sockstat.tcp.tw falls and connect() no longer fails with EADDRNOTAVAIL; no rise in connection resets"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+  tests:
+    - fixture: network-port-exhaustion
+      expect: { status: recommend, proposed: "1" }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: net.ipv4.tcp_slow_start_after_idle
+  title: Keep congestion window across idle periods
+  kind: sysctl
+  param: net.ipv4.tcp_slow_start_after_idle
+  domain: network
+  applies:
+    when: 'hasApp("nginx") || hasApp("haproxy") || hasApp("envoy")'
+  recommend: "0"
+  compare: eq
+  namespaced: true
+  risk: medium
+  rationale: >-
+    With the default of 1 the kernel shrinks the congestion window after a connection has been idle for one RTO
+    (RFC 2861), so a keep-alive connection that sends in bursts restarts in slow start. The tuned
+    network-throughput profile sets 0 to keep the window. This is limited to hosts running a reverse proxy
+    or web server (nginx, haproxy, envoy), where persistent connections are common. The risk is a line-rate
+    burst into a path that has become congested while the connection was idle.
+  verify: "Time to first full-rate response on reused keep-alive connections drops; no rise in retransmits (Tcp.RetransSegs)"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+    - https://github.com/redhat-performance/tuned/tree/master/profiles
+  tests:
+    - fixture: web-16c-64g-nginx
+      expect: { status: recommend, proposed: "0" }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: net.ipv4.tcp_notsent_lowat
+  title: Limit unsent data queued in the socket
+  kind: sysctl
+  param: net.ipv4.tcp_notsent_lowat
+  domain: network
+  applies:
+    when: 'hasApp("nginx") || hasApp("haproxy") || hasApp("envoy")'
+  recommend: "131072"
+  compare: lte
+  namespaced: true
+  risk: medium
+  rationale: >-
+    The default is unlimited (UINT_MAX). A finite value limits the bytes waiting in the write queue so poll()
+    and epoll report the socket writable only when the backlog drops below it. That keeps data in
+    user space where a proxy can still reorder it (HTTP/2 prioritisation) and saves send-side memory. The
+    tuned network-throughput profile uses 131072. Too small a value causes more wakeups and lowers throughput,
+    so values at or below 131072 are accepted as they are.
+  verify: "Per-socket send-queue memory (`ss -tm` tb/skmem) falls; throughput on large transfers is unchanged"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+    - https://github.com/redhat-performance/tuned/tree/master/profiles
+  tests:
+    - fixture: web-16c-64g-nginx
+      expect: { status: recommend, proposed: "131072" }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

@@ -1,0 +1,5 @@
+description: "web-16c-64g-nginx (64 GiB) with tcp_mem pressure limit of 20000000 pages (about 76 GiB)"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "proc/sys/net/ipv4/tcp_mem": "10000000 15000000 20000000\n"

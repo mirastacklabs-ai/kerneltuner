@@ -1,0 +1,100 @@
+- id: net.nic.rx_ring
+  title: NIC receive ring size
+  kind: nic
+  param: rx_ring
+  domain: network
+  foreach: nic
+  filter: >-
+    !item.Virtual && item.RxRingMax > item.RxRing && rate("nic." + item.Name + ".rx_missed_errors") > 0
+  recommend: "min(item.RxRingMax, current * 2)"
+  compare: gte
+  evidence:
+    - metric: "nic.{item}.rx_missed_errors"
+      rate_gt: 0
+  namespaced: true
+  risk: medium
+  rationale: >-
+    The rx ring is the buffer between the NIC DMA engine and the driver's NAPI poll. When it fills the NIC
+    counts rx_missed_errors, which the kernel adds to the interface error total in /proc/net/dev. The rule
+    only considers a physical NIC with that counter rising and room left up to the hardware maximum
+    (ethtool -g), and proposes doubling, capped at that maximum. Bigger rings add memory and queueing latency
+    and may reset the link when changed (ethtool -G). If softnet time_squeeze rises instead, ring size is not the
+    cause: look at netdev_budget and IRQ spread.
+  verify: "nic.<if>.rx_missed_errors rate returns to 0; `ethtool -g <if>` shows the new size"
+  sources:
+    - https://man7.org/linux/man-pages/man8/ethtool.8.html
+    - https://docs.kernel.org/networking/scaling.html
+  tests:
+    - fixture: network-25g-backlog-drops
+      expect: { status: recommend, proposed: "1024", target: eth0 }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+    - fixture: network-tuned-web
+      expect: { status: not-applicable }
+
+- id: net.nic.combined
+  title: NIC channel (queue) count
+  kind: nic
+  param: combined
+  domain: network
+  foreach: nic
+  filter: >-
+    !item.Virtual && item.CombinedMax > item.Combined && item.Combined < facts.CPU.Cores &&
+    (rate("softnet.time_squeeze") > 0 || rate("softnet.dropped") > 0)
+  recommend: "min(item.CombinedMax, facts.CPU.Cores)"
+  compare: gte
+  evidence:
+    - metric: softnet.time_squeeze
+      rate_gt: 0
+    - metric: softnet.dropped
+      rate_gt: 0
+  namespaced: true
+  risk: medium
+  rationale: >-
+    Receive-side scaling gives each NIC channel its own queue and IRQ so packet processing spreads over CPUs
+    (ethtool -L sets combined channels). A NIC running fewer channels than the host has physical cores
+    concentrates softirq work on few CPUs, which shows up as rising softnet time_squeeze or dropped counters.
+    The rule proposes one channel per physical core, bounded by the hardware maximum, because channels beyond
+    the core count only waste IRQs. Changing channels can bounce the link, and it needs CAP_NET_ADMIN in the
+    NIC's namespace. It stays silent while softnet counters are quiet.
+  verify: "softnet.time_squeeze and softnet.dropped rates fall; /proc/interrupts shows the NIC IRQs spread over more CPUs"
+  sources:
+    - https://docs.kernel.org/networking/scaling.html
+    - https://man7.org/linux/man-pages/man8/ethtool.8.html
+  tests:
+    - fixture: network-few-channels
+      expect: { status: recommend, proposed: "8", target: eth0 }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+
+- id: net.rps.rps_cpus
+  title: Receive Packet Steering on single-queue NICs
+  kind: sysfs
+  param: "/sys/class/net/{item}/queues/rx-0/rps_cpus"
+  domain: network
+  foreach: nic
+  filter: >-
+    !item.Virtual && item.RxQueues == 1 && item.SpeedMbps >= 1000 && facts.CPU.Threads > 1 &&
+    facts.CPU.Threads <= 32 && len(facts.NUMA) <= 1
+  recommend: >-
+    current == 0 ? (["", "1", "3", "7"][facts.CPU.Threads % 4] + repeat("f", int(floor(facts.CPU.Threads / 4)))) : current
+  compare: eq
+  namespaced: true
+  risk: medium
+  rationale: >-
+    With a single hardware receive queue every packet of the NIC is processed on the one CPU that takes its
+    IRQ. The kernel scaling docs say RPS may help when there are fewer hardware queues than CPUs, and that
+    the rps_cpus mask should cover CPUs in the same memory domain as the interrupting CPU. The rule is
+    limited to single-socket hosts with at most 32 CPUs, where that domain is every CPU, and proposes a
+    mask of all CPUs when the queue's mask is still 0. A non-zero mask is never touched. RPS adds IPIs and
+    cache traffic and gains nothing if RSS already spreads the load; it needs a physical NIC at 1 Gbit/s or more.
+  verify: "softnet_stat column received_rps rises and per-CPU softirq load evens out"
+  sources:
+    - https://docs.kernel.org/networking/scaling.html
+  tests:
+    - fixture: network-single-queue-nic
+      expect: { status: recommend, proposed: "ffff", target: eth1 }
+    - fixture: network-single-queue-rps-on
+      expect: { status: ok, target: eth1 }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }

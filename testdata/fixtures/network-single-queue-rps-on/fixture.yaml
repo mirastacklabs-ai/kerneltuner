@@ -1,0 +1,5 @@
+description: "network-single-queue-nic with RPS already enabled on eth1"
+synthetic: true
+extends: network-single-queue-nic
+files:
+  "sys/class/net/eth1/queues/rx-0/rps_cpus": "ffff\n"

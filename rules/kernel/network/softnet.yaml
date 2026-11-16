@@ -1,0 +1,104 @@
+- id: net.core.netdev_max_backlog
+  title: Per-CPU input packet queue
+  kind: sysctl
+  param: net.core.netdev_max_backlog
+  domain: network
+  recommend: >-
+    rate("softnet.dropped") > 0 ? max(current, min(current * 2, 65536)) : current
+  compare: eq
+  evidence:
+    - metric: softnet.dropped
+      rate_gt: 0
+  namespaced: false
+  risk: medium
+  rationale: >-
+    netdev_max_backlog caps the per-CPU queue of packets received faster than the kernel can process them
+    (default 1000 in net/core/hotdata.c). Column 2 of /proc/net/softnet_stat counts packets dropped
+    when that queue is full. The rule only acts while softnet.dropped is rising and doubles the value per
+    step, capped at 65536 (a conservative bound chosen by this pack to limit per-CPU queue memory and added
+    latency; it is not a kernel figure). It mainly helps the RPS, loopback, veth and tunnel paths, and it
+    does not fix a CPU-bound softirq: if drops continue, look at netdev_budget and IRQ spread. The knob exists
+    only in the initial netns. bpftune also tunes it.
+  verify: "softnet.dropped rate returns to 0 after re-measuring; if not, raise by another doubling or fix IRQ and RPS spread"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/net.html
+    - https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
+    - https://github.com/oracle/bpftune
+  tests:
+    - fixture: network-25g-backlog-drops
+      expect: { status: recommend, proposed: "2000" }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: container-k8s-redis
+      expect: { status: ok }
+
+- id: net.core.netdev_budget
+  title: NAPI poll budget (packets per softirq round)
+  kind: sysctl
+  param: net.core.netdev_budget
+  domain: network
+  recommend: >-
+    rate("softnet.time_squeeze") > 0 ? max(current, min(current * 2, 1200)) : current
+  compare: eq
+  evidence:
+    - metric: softnet.time_squeeze
+      rate_gt: 0
+  namespaced: false
+  risk: medium
+  rationale: >-
+    netdev_budget (default 300) is the maximum number of packets all interfaces may process in one NAPI
+    softirq round, which is also bounded by netdev_budget_usecs. Column 3 of /proc/net/softnet_stat
+    (time_squeeze) counts rounds that ended with work still pending. The rule acts only while time_squeeze
+    rises and doubles per step, capped at 1200 (4x the default, a heuristic bound chosen by this pack). Longer
+    softirq rounds delay the scheduler, so stop once time_squeeze stops. If time_squeeze persists, spread
+    IRQs and queues over more CPUs instead. bpftune tunes this the same way and backs off when scheduler wait
+    time rises.
+  verify: "softnet.time_squeeze rate returns to 0 without a rise in scheduling latency"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/net.html
+    - https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
+    - https://github.com/oracle/bpftune
+  tests:
+    - fixture: network-25g-backlog-drops
+      expect: { status: recommend, proposed: "600" }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+    - fixture: container-k8s-redis
+      expect: { status: ok }
+
+- id: net.core.netdev_budget_usecs
+  title: NAPI poll time budget
+  kind: sysctl
+  param: net.core.netdev_budget_usecs
+  domain: network
+  applies:
+    kernel: ">=4.12"
+  recommend: >-
+    rate("softnet.time_squeeze") > 0 ? max(current, min(current * 2, 8000)) : current
+  compare: eq
+  evidence:
+    - metric: softnet.time_squeeze
+      rate_gt: 0
+  namespaced: false
+  risk: medium
+  rationale: >-
+    Linux 4.12 replaced the fixed two-jiffy limit of a softirq round with the netdev_budget_usecs sysctl.
+    The default is 2 * 1000000 / HZ microseconds (2000 at HZ=1000, 8000 at HZ=250). The rule acts only
+    while softnet_stat time_squeeze rises and doubles the value per step, capped at 8000 (a heuristic bound
+    chosen by this pack). Like netdev_budget, longer rounds trade scheduler latency for packet throughput,
+    and persistent squeeze points at IRQ spread rather than budget.
+  verify: "softnet.time_squeeze rate returns to 0 without a rise in scheduling latency"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/net.html
+    - https://kernelnewbies.org/Linux_4.12
+    - https://raw.githubusercontent.com/torvalds/linux/master/net/core/hotdata.c
+    - https://github.com/oracle/bpftune
+  tests:
+    - fixture: network-25g-backlog-drops
+      expect: { status: recommend, proposed: "4000" }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: legacy-4.9-c10k
+      expect: { status: not-applicable }

@@ -1,0 +1,72 @@
+- id: net.core.somaxconn
+  title: Listen backlog cap (accept queue)
+  kind: sysctl
+  param: net.core.somaxconn
+  domain: network
+  applies:
+    when: "workload.Listeners > 0"
+  recommend: "max(current, 4096)"
+  compare: gte
+  evidence:
+    - metric: TcpExt.ListenOverflows
+      rate_gt: 0
+  namespaced: true
+  risk: low
+  rationale: >-
+    The accept queue of every listening socket is min(the application's listen() backlog, somaxconn).
+    The default was 128 before Linux 5.4 and is 4096 since (SOMAXCONN raised in commit 19f92a030ca6), so
+    only older kernels or hosts that lowered it fall below 4096. A full accept queue makes the kernel drop
+    the SYN and count TcpExtListenOverflows. A larger value does nothing unless the application also asks
+    for a bigger backlog (nginx and Redis default to 511), and it can hide a slow accept loop behind queue
+    latency under overload.
+  verify: "TcpExt.ListenOverflows and TcpExt.ListenDrops rates stay 0; the application's own listen backlog is >= the new value"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+    - https://kernelnewbies.org/Linux_5.4
+    - https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6
+    - https://docs.kernel.org/networking/snmp_counter.html
+  tests:
+    - fixture: legacy-4.9-c10k
+      expect: { status: recommend, proposed: "4096" }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
+
+- id: net.ipv4.tcp_max_syn_backlog
+  title: SYN backlog per listener
+  kind: sysctl
+  param: net.ipv4.tcp_max_syn_backlog
+  domain: network
+  applies:
+    when: "workload.Listeners > 0"
+  recommend: >-
+    (rate("TcpExt.ListenDrops") > 0 || kver("<5.4")) ? max(current, 4096) : current
+  compare: gte
+  evidence:
+    - metric: TcpExt.ListenDrops
+      rate_gt: 0
+  namespaced: true
+  risk: low
+  rationale: >-
+    This is the per-listener limit of half-open (SYN_RECV) request sockets, about 304 bytes each. The docs
+    say it scales with memory and bottoms out at 128 on small machines, and Linux 5.4 raised the default
+    to 4096 together with somaxconn, so the docs say to raise the two together. The rule only proposes
+    a change on kernels older than 5.4 or while TcpExtListenDrops is rising, because a larger value costs
+    memory and does not fix drops caused by a full accept queue or by a slow application.
+  verify: "TcpExt.ListenDrops rate stays 0 and dmesg has no 'possible SYN flooding' lines"
+  sources:
+    - https://docs.kernel.org/networking/ip-sysctl.html
+    - https://kernelnewbies.org/Linux_5.4
+    - https://docs.kernel.org/networking/snmp_counter.html
+  tests:
+    - fixture: legacy-4.9-c10k
+      expect: { status: recommend, proposed: "4096" }
+    - fixture: network-tuned-web
+      expect: { status: ok }
+    - fixture: network-25g-backlog-drops
+      expect: { status: recommend, proposed: "4096" }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

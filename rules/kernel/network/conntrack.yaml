@@ -1,0 +1,35 @@
+- id: net.netfilter.nf_conntrack_max
+  title: Connection tracking table size
+  kind: sysctl
+  param: net.netfilter.nf_conntrack_max
+  domain: network
+  applies:
+    when: 'module("nf_conntrack")'
+  recommend: >-
+    (metric("conntrack.max") > 0 && metric("conntrack.count") > 0.8 * current) ? current * 2 : current
+  compare: eq
+  evidence:
+    - metric: conntrack.count
+      ratio_gt: 0.8
+      of: conntrack.max
+  namespaced: false
+  risk: medium
+  rationale: >-
+    When the table is full the kernel drops new connections and logs "nf_conntrack: table full, dropping
+    packet". The rule fires only once the live entry count passes 80% of nf_conntrack_max (a headroom
+    threshold chosen by this pack) and proposes doubling. The docs size nf_conntrack_buckets from RAM (at least
+    1024, at most 262144) and make nf_conntrack_max equal to the bucket count by default; each entry is
+    inserted twice, so the average chain length is 2. Raising max without raising the bucket count lengthens
+    chains and costs lookup time, so raise the hash size too (module parameter hashsize; the buckets sysctl
+    is writable only in the initial netns). Each entry costs kernel memory. It is only evaluated when
+    nf_conntrack is loaded.
+  verify: "conntrack.count stays below 80% of nf_conntrack_max and dmesg has no 'table full' lines"
+  sources:
+    - https://docs.kernel.org/networking/nf_conntrack-sysctl.html
+  tests:
+    - fixture: network-conntrack-full
+      expect: { status: recommend, proposed: "524288" }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }
