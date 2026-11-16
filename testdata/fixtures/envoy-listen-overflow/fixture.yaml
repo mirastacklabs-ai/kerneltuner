@@ -1,0 +1,6 @@
+description: "envoy-tuned with the accept queue overflowing (somaxconn 4096, ListenOverflows 8.5/s)"
+synthetic: true
+extends: envoy-tuned
+rates:
+  TcpExt.ListenOverflows: 8.5
+  TcpExt.ListenDrops: 8.5

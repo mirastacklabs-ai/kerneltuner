@@ -1,0 +1,7 @@
+description: "httpd-stock host that is actively swapping out (vmstat.pswpout 40/s) with 8 GiB of swap"
+synthetic: true
+extends: httpd-stock
+files:
+  "proc/meminfo": "MemTotal:       16384000 kB\nMemFree:          204800 kB\nMemAvailable:     409600 kB\nSwapTotal:      8388604 kB\nSwapFree:       6291456 kB\n"
+rates:
+  vmstat.pswpout: 40

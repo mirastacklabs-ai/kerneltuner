@@ -1,0 +1,6 @@
+description: "httpd-stock on a kernel 4.19 host with the old somaxconn default of 128"
+synthetic: true
+extends: httpd-stock
+files:
+  "proc/sys/kernel/osrelease": "4.19.0-25-amd64\n"
+  "proc/sys/net/core/somaxconn": "128\n"
