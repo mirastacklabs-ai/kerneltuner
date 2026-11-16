@@ -1,0 +1,5 @@
+description: "Cilium agent on RHEL 8.10 kernel 4.18 (documented exception)"
+synthetic: true
+extends: cilium-stock
+files:
+  "proc/sys/kernel/osrelease": "4.18.0-553.el8_10.x86_64\n"

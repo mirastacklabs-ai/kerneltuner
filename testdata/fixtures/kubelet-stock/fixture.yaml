@@ -1,0 +1,13 @@
+description: "kubeadm node: kubelet running with swap enabled and stock net.ipv4.ip_forward=0"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3100/cgroup": "0::/system.slice/kubelet.service\n"
+  "proc/3100/cmdline": "/usr/bin/kubelet\u0000--config=/var/lib/kubelet/config.yaml\u0000"
+  "proc/3100/comm": "kubelet\n"
+  "proc/3100/fd/0": ""
+  "proc/3100/fd/1": ""
+  "proc/3100/fd/2": ""
+  "proc/3100/fd/3": ""
+  "proc/3100/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1048576                1048576                files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/meminfo": "MemTotal:       16384000 kB\nMemFree:         8192000 kB\nMemAvailable:   12000000 kB\nSwapTotal:      2097152 kB\nSwapFree:       2097152 kB\n"

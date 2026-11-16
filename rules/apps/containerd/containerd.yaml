@@ -1,0 +1,25 @@
+- id: app.containerd.overlay_module
+  title: overlay filesystem missing for containerd's default snapshotter
+  kind: report
+  param: overlay
+  domain: storage
+  applies:
+    when: "hasApp(\"containerd\")"
+  detect: "!module(\"overlay\") && !exists(\"/sys/module/overlay\")"
+  risk: low
+  rationale: >-
+    containerd's CRI configuration documents `overlayfs` as the default snapshotter (the equivalent of Docker's overlay2), and the unit file shipped with containerd and the operations guide both run `ExecStartPre=-/sbin/modprobe overlay` so the kernel module is present before the daemon starts. Neither the loaded module list nor /sys/module shows overlay here, so the default snapshotter has no kernel support unless overlayfs is built in without a /sys/module entry or another snapshotter (native, btrfs, zfs, devmapper) is configured. This is a prompt to verify, not proof of a fault.
+  advice: >-
+    The overlay kernel module is not loaded. Load it with `modprobe overlay` and make it persistent (the containerd unit does this with `ExecStartPre=-/sbin/modprobe overlay`, or add `overlay` to /etc/modules-load.d/containerd.conf). Ignore this if containerd is configured with a different snapshotter.
+  verify: "lsmod shows overlay (or /sys/module/overlay exists), and containerd starts pods with the overlayfs snapshotter"
+  sources:
+    - https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
+    - https://raw.githubusercontent.com/containerd/containerd/main/docs/ops.md
+    - https://raw.githubusercontent.com/containerd/containerd/main/docs/cri/config.md
+  tests:
+    - fixture: containerd-stock
+      expect: { status: firing }
+    - fixture: containerd-tuned
+      expect: { status: ok }
+    - fixture: base-linux
+      expect: { status: not-applicable }

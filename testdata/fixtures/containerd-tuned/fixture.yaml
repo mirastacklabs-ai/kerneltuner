@@ -1,0 +1,5 @@
+description: "containerd with the overlay module loaded"
+synthetic: true
+extends: containerd-stock
+files:
+  "proc/modules": "overlay 217088 0 - Live 0x0000000000000000\nbr_netfilter 32768 0 - Live 0x0000000000000000\n"

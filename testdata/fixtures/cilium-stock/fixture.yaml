@@ -1,0 +1,12 @@
+description: "Cilium agent on kernel 5.15 (above the 5.10 minimum)"
+synthetic: true
+extends: base-linux
+files:
+  "proc/3400/cgroup": "0::/system.slice/cilium.service\n"
+  "proc/3400/cmdline": "cilium-agent\u0000--config-dir=/tmp/cilium/config-map\u0000"
+  "proc/3400/comm": "cilium-agent\n"
+  "proc/3400/fd/0": ""
+  "proc/3400/fd/1": ""
+  "proc/3400/fd/2": ""
+  "proc/3400/fd/3": ""
+  "proc/3400/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            1048576                1048576                files     \nMax locked memory         8388608              8388608              bytes     \n"
