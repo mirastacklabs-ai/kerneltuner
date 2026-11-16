@@ -1,0 +1,9 @@
+description: "Base host with fs.file-max lowered to 262144 and 235000 handles allocated (90 percent)"
+synthetic: true
+extends: base-linux
+files:
+  "proc/sys/fs/file-max": "262144\n"
+  "proc/sys/fs/file-nr": "235000\t0\t262144\n"
+values:
+  fs.file_nr.allocated: 235000
+  fs.file_nr.max: 262144

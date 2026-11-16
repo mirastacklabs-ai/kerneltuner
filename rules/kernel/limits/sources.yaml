@@ -1,0 +1,16 @@
+- url: https://docs.kernel.org/admin-guide/sysctl/fs.html
+  project: linux
+  covers: fs.file-max, fs.file-nr, fs.nr_open semantics and defaults
+  last_reviewed: 2026-11-16
+- url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+  project: systemd
+  covers: v240 default RLIMIT_NOFILE (kernel 1024/4096, systemd hard 512K, soft stays 1024), nr_open/file-max bump
+  last_reviewed: 2026-11-16
+- url: https://0pointer.net/blog/file-descriptor-limits.html
+  project: systemd
+  covers: apps should raise their own soft RLIMIT_NOFILE to the hard limit and not use select()
+  last_reviewed: 2026-11-16
+- url: https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html
+  project: systemd
+  covers: LimitNOFILE= per-unit override (soft:hard syntax)
+  last_reviewed: 2026-11-16

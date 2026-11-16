@@ -1,0 +1,8 @@
+- url: https://docs.haproxy.org/3.0/configuration.html
+  project: haproxy
+  covers: global maxconn, ulimit-n, fd-hard-limit and how HAProxy derives its fd limits
+  last_reviewed: 2026-11-16
+- url: https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+  project: systemd
+  covers: kernel default RLIMIT_NOFILE 1024/4096; systemd hard limit 512K since v240
+  last_reviewed: 2026-11-16

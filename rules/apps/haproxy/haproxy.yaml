@@ -1,0 +1,24 @@
+- id: app.haproxy.fd_limit
+  title: HAProxy capped by a kernel-default open-files hard limit
+  kind: runtime
+  param: maxconn
+  domain: limits
+  applies:
+    when: "hasApp(\"haproxy\") && any(facts.Procs, {.Comm == \"haproxy\" && .NoFileHard <= 4096})"
+  advice: >-
+    HAProxy's RLIMIT_NOFILE hard limit is 4096, the kernel default. HAProxy raises its own soft limit according to global maxconn, and when maxconn is not set it derives it from the larger of the hard and soft limits, so at 4096 the connection ceiling is only a few thousand (and HAProxy cannot raise the limit beyond the hard limit). Raise LimitNOFILE= in the haproxy systemd unit (systemd v240+ already passes a 512K hard limit unless the unit overrides it), then set `maxconn` in the global section to the intended per-process connection count. Use `fd-hard-limit <n>` rather than `ulimit-n` if you want to cap the fd count; the HAProxy manual recommends not setting ulimit-n.
+  verify: "cat /proc/<haproxy pid>/limits shows a larger Max open files, and HAProxy starts with the intended maxconn"
+  namespaced: true
+  risk: low
+  rationale: >-
+    The kernel default RLIMIT_NOFILE is 1024 soft / 4096 hard, and systemd since v240 overrides the hard limit to 512K for services. A HAProxy still at a 4096 hard limit (an old systemd, a sysvinit-style launch, or a unit that pins LimitNOFILE) is bound by it because HAProxy's automatic maxconn and soft-limit adjustment never exceed the hard limit. The HAProxy manual gives no sysctl guidance for this, so the rule is limited to the fd limit and does not propose a maxconn number (the config is not parsed).
+  sources:
+    - https://docs.haproxy.org/3.0/configuration.html
+    - https://raw.githubusercontent.com/systemd/systemd/main/NEWS
+  tests:
+    - fixture: legacy-4.9-c10k
+      expect: { status: recommend }
+    - fixture: haproxy-fd-ok
+      expect: { status: not-applicable }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }

@@ -1,0 +1,6 @@
+description: "legacy-4.9-c10k with haproxy running under systemd defaults (hard limit 524288)"
+synthetic: true
+extends: legacy-4.9-c10k
+files:
+  "proc/902/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            524288               524288               files     \nMax locked memory         8388608              8388608              bytes     \n"
+  "proc/904/limits": "Limit                     Soft Limit           Hard Limit           Units\nMax cpu time              unlimited            unlimited            seconds\nMax file size             unlimited            unlimited            bytes\nMax processes             514380               514380               processes\nMax open files            524288               524288               files     \nMax locked memory         8388608              8388608              bytes     \n"
