@@ -92,7 +92,10 @@ func collectProcs(r Root, f *Facts) {
 		if b, err := os.ReadFile(filepath.Join(dir, "limits")); err == nil {
 			p.NoFileSoft, p.NoFileHard = parseLimit(string(b), "Max open files")
 			p.MemlockSoft, p.MemlockHard = parseLimit(string(b), "Max locked memory")
+			p.NProcSoft, p.NProcHard = parseLimit(string(b), "Max processes")
+			p.CoreSoft, _ = parseLimit(string(b), "Max core file size")
 		}
+		p.OOMScoreAdj = atoi(readOpt(filepath.Join(dir, "oom_score_adj")))
 		p.OpenFDs = countFDs(filepath.Join(dir, "fd"))
 		if b, err := os.ReadFile(filepath.Join(dir, "cgroup")); err == nil {
 			p.Unit = unitFromCgroup(string(b))

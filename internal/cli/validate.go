@@ -16,6 +16,11 @@ func newValidateCmd(g *globalOpts) *cobra.Command {
 		Short: "Check rule schema, source registration and test fixtures",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if g.RulesDir != "" {
+				if err := rules.CheckPacks(rulesFS(g)); err != nil {
+					return fmt.Errorf("load rules (--rules-dir %s): %w", g.RulesDir, err)
+				}
+			}
 			rs, eco, srcs, err := loadRules(g)
 			if err != nil {
 				return err

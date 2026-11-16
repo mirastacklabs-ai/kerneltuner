@@ -24,7 +24,14 @@ type Conflict struct {
 	// Resolved is true when the proposals were merged (gte: max, lte: min).
 	// False means a genuine disagreement: a warning, resolved by score.
 	Resolved bool
+	// Kept lists "rule=value" for rules that are already satisfied (status ok,
+	// compare eq) at a value different from Chosen: applying Chosen breaks what
+	// they asked for. Set by Conflicts only.
+	Kept []string
 }
+
+// Genuine reports whether the rules truly disagree (not Resolved by merging).
+func (c Conflict) Genuine() bool { return !c.Resolved }
 
 // Setting names the conflicting setting: "param" or "param [target]".
 func (c Conflict) Setting() string {
@@ -41,8 +48,11 @@ func (c Conflict) String() string {
 		parts[i] = c.Rules[i] + "=" + c.Values[i]
 	}
 	s := fmt.Sprintf("%s: %s -> %s (%s)", c.Setting(), strings.Join(parts, ", "), c.Chosen, c.Method)
-	if !c.Resolved {
+	if !c.Resolved && c.Winner != "" {
 		s += fmt.Sprintf(" from %s; rules disagree", c.Winner)
+	}
+	if len(c.Kept) > 0 {
+		s += "; already satisfied and would be broken: " + strings.Join(c.Kept, ", ")
 	}
 	return s
 }
@@ -104,10 +114,87 @@ func Reconcile(recs []Recommendation) ([]Recommendation, []Conflict) {
 	return out, conflicts
 }
 
-// Conflicts returns just the conflicts Reconcile finds in recs.
+// Conflicts returns the conflicts Reconcile finds in recs, plus settings where
+// the only recommendation contradicts a rule that is already satisfied (status
+// ok, compare eq) at another value, such as app.postgres.overcommit_memory=2
+// recommended on a host where app.redis.overcommit_memory=1 is ok. Those carry
+// Kept and are never Resolved. Use Genuine (or ConflictBlock) to pick the ones
+// to shout about.
 func Conflicts(recs []Recommendation) []Conflict {
-	_, c := Reconcile(recs)
-	return c
+	merged, out := Reconcile(recs)
+	// Settings that already conflict, by key, and ok rules per key.
+	idx := map[string]int{}
+	for i, c := range out {
+		idx[strings.ToUpper(c.Kind+"|"+c.Param)+"|"+c.Target] = i
+	}
+	type okRule struct{ rule, val string }
+	oks := map[string][]okRule{}
+	for _, r := range recs {
+		if r.Status != StatusOK || !mergeKinds[r.Kind] || r.Param == "" || r.Proposed == "" || (r.Compare != "" && r.Compare != "eq") {
+			continue
+		}
+		k := r.Kind + "|" + strings.ToUpper(r.Param) + "|" + r.Target
+		oks[k] = append(oks[k], okRule{r.RuleID, r.Proposed})
+	}
+	norm := func(v string) string { return strings.Join(strings.Fields(v), " ") }
+	for _, r := range merged {
+		k, ok := mergeKey(r)
+		if !ok || len(oks[k]) == 0 {
+			continue
+		}
+		var kept []string
+		for _, o := range oks[k] {
+			if norm(o.val) != norm(r.Proposed) {
+				kept = append(kept, o.rule+"="+o.val)
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		if i, found := idx[strings.ToUpper(r.Kind+"|"+r.Param)+"|"+r.Target]; found {
+			out[i].Kept = kept
+			continue
+		}
+		out = append(out, Conflict{Kind: r.Kind, Param: r.Param, Target: r.Target,
+			Rules: []string{r.RuleID}, Values: []string{r.Proposed}, Chosen: r.Proposed,
+			Method: "recommend-vs-ok", Winner: r.RuleID, Kept: kept})
+	}
+	return out
+}
+
+// ConflictBlock formats the genuine conflicts (see Conflict.Genuine) as a
+// loud multi-line block for the top of a report. It is empty when there are
+// none.
+func ConflictBlock(cs []Conflict) string {
+	var gs []Conflict
+	for _, c := range cs {
+		if c.Genuine() {
+			gs = append(gs, c)
+		}
+	}
+	if len(gs) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	noun := "setting has"
+	if len(gs) > 1 {
+		noun = "settings have"
+	}
+	fmt.Fprintf(&b, "CONFLICT: %d %s rules that disagree. generate and apply keep the highest-scored proposal; review before applying.\n", len(gs), noun)
+	for _, c := range gs {
+		fmt.Fprintf(&b, "  %s\n", c.Setting())
+		for i, id := range c.Rules {
+			note := ""
+			if c.Values[i] == c.Chosen && c.Winner == id {
+				note = " (chosen)"
+			}
+			fmt.Fprintf(&b, "    %s proposes %s%s\n", id, c.Values[i], note)
+		}
+		for _, k := range c.Kept {
+			fmt.Fprintf(&b, "    %s is already satisfied and would be broken\n", strings.Replace(k, "=", " wants ", 1))
+		}
+	}
+	return b.String()
 }
 
 func mergeKey(r Recommendation) (string, bool) {

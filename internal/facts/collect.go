@@ -15,6 +15,7 @@ func Collect(r Root) (*Facts, error) {
 	}
 	// Order matters: host and accel look at cpuinfo/cmdline results.
 	collectKernel(r, f)
+	collectKconfig(r, f)
 	collectCPU(r, f)
 	collectHost(r, f)
 	collectNUMA(r, f)
@@ -28,6 +29,7 @@ func Collect(r Root) (*Facts, error) {
 	collectLimits(r, f)
 	collectModules(r, f)
 	collectSwaps(r, f)
+	collectMounts(r, f)
 	collectProcs(r, f)
 	collectEcosystem(r, f)
 	return f, nil

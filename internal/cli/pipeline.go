@@ -107,15 +107,23 @@ func loadPipeline(g *globalOpts) (*pipeline, error) {
 	return p, nil
 }
 
+// rulesFS is the embedded rule tree, or the --rules-dir directory when set.
+func rulesFS(g *globalOpts) fs.FS {
+	if g.RulesDir != "" {
+		return os.DirFS(g.RulesDir)
+	}
+	return rulesfs.FS
+}
+
 // loadRules loads every rule pack: the embedded ones, or --rules-dir when set.
 // It applies no --domain/--pack filtering.
 func loadRules(g *globalOpts) ([]rules.Rule, rules.Ecosystem, []rules.Source, error) {
-	var fsys fs.FS = rulesfs.FS
-	if g.RulesDir != "" {
-		fsys = os.DirFS(g.RulesDir)
-	}
+	fsys := rulesFS(g)
 	rs, eco, srcs, err := rules.Load(fsys)
 	if err != nil {
+		if g.RulesDir != "" {
+			return nil, eco, nil, fmt.Errorf("load rules (--rules-dir %s): %w", g.RulesDir, err)
+		}
 		return nil, eco, nil, fmt.Errorf("load rules: %w", err)
 	}
 	return rs, eco, srcs, nil

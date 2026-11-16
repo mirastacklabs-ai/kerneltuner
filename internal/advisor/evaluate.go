@@ -428,6 +428,8 @@ func currentValue(r *rules.Rule, in Input, it item) (display string, typed any, 
 			v = app.NoFileSoft
 		case "LIMITMEMLOCK":
 			v = app.MemlockSoft
+		case "LIMITNPROC":
+			v = app.NProcSoft
 		default:
 			return "", nil, false, fmt.Errorf("unknown limit %q", r.Param)
 		}

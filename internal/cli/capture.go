@@ -209,6 +209,8 @@ func (c *capturer) proc() {
 	}
 	c.file("proc", p, "cmdline", redactCmdlineText)
 	c.file("proc", p, "cpuinfo", trimCPUInfo)
+	c.mounts()
+	c.kconfig()
 	c.file("proc", p, "net/tcp", listenOnly)
 	c.file("proc", p, "net/tcp6", listenOnly)
 	// Only the container= entry of pid 1's environment is kept.
@@ -347,11 +349,12 @@ func listenOnly(s string) string {
 	return b.String()
 }
 
-// trimLimits keeps the header and the two limits the collector reads.
+// trimLimits keeps the header and the limits the collector reads.
 func trimLimits(s string) string {
 	var b strings.Builder
 	for i, line := range strings.Split(s, "\n") {
-		if i == 0 || strings.HasPrefix(line, "Max open files") || strings.HasPrefix(line, "Max locked memory") {
+		if i == 0 || strings.HasPrefix(line, "Max open files") || strings.HasPrefix(line, "Max locked memory") ||
+			strings.HasPrefix(line, "Max processes") || strings.HasPrefix(line, "Max core file size") {
 			b.WriteString(line + "\n")
 		}
 	}
@@ -388,6 +391,7 @@ func (c *capturer) procs() {
 		c.snap.Files[key+"cmdline"] = c.scrub(keepArgv(raw))
 		c.file("proc", c.r.Proc, e.Name()+"/limits", trimLimits)
 		c.file("proc", c.r.Proc, e.Name()+"/cgroup", scrubCgroup)
+		c.file("proc", c.r.Proc, e.Name()+"/oom_score_adj", nil)
 		// Only the number of open fds is recorded, never their targets.
 		if fds, err := os.ReadDir(filepath.Join(dir, "fd")); err == nil {
 			for i := 0; i < len(fds) && i < maxFDEntries; i++ {
@@ -508,6 +512,19 @@ func (c *capturer) blocks() {
 		}
 		c.file("sys", s, base+"device/transport", nil)
 	}
+	// Mount point -> disk mapping: partition and disk links, device-mapper
+	// names and the slaves of dm and md devices.
+	links, _ := filepath.Glob(filepath.Join(s, "class/block/*"))
+	for _, l := range links {
+		n := filepath.Base(l)
+		if strings.HasPrefix(n, "loop") || strings.HasPrefix(n, "ram") || strings.HasPrefix(n, "zram") || strings.HasPrefix(n, "nbd") {
+			continue
+		}
+		c.symlinks("sys", s, "class/block/"+n)
+	}
+	c.glob("sys", s, "block/dm-*/dm/name", nil)
+	c.symlinks("sys", s, "block/dm-*/slaves/*")
+	c.symlinks("sys", s, "block/md*/slaves/*")
 }
 
 func (c *capturer) pci() {
@@ -529,6 +546,106 @@ func (c *capturer) pci() {
 		c.symlinks("sys", s, base+"driver")
 		c.symlinks("sys", s, base+"iommu_group")
 	}
+}
+
+// netFS are filesystem types whose device field is a remote address.
+var netFS = map[string]bool{"nfs": true, "nfs4": true, "cifs": true, "smb3": true, "ceph": true, "glusterfs": true, "lustre": true, "afs": true, "9p": true}
+
+// dropOpt are mount options that carry addresses or credentials.
+var dropOpt = regexp.MustCompile(`^(addr|clientaddr|mountaddr|mountvers|username|user|domain|credentials|password|pass|sec|lowerdir|upperdir|workdir)=`)
+
+// sanitizeMounts keeps the mount table without remote devices, addresses,
+// credentials or overlay layer paths.
+func sanitizeMounts(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		if netFS[f[2]] || strings.HasPrefix(f[2], "fuse.") || strings.Contains(f[0], ":") || strings.HasPrefix(f[0], "//") {
+			f[0] = "[remote]"
+		}
+		var opts []string
+		for _, o := range strings.Split(f[3], ",") {
+			if !dropOpt.MatchString(o) {
+				opts = append(opts, redactArg(o))
+			}
+		}
+		f[3] = strings.Join(opts, ",")
+		f[1] = redactArg(f[1])
+		b.WriteString(strings.Join(f[:4], " ") + " 0 0\n")
+	}
+	return b.String()
+}
+
+// mounts records the mount table as proc/mounts (the collector falls back to it).
+func (c *capturer) mounts() {
+	for _, rel := range []string{"self/mounts", "mounts"} {
+		if s, err := readLimited(filepath.Join(c.r.Proc, rel), maxCaptureFile); err == nil {
+			c.snap.Files["proc/mounts"] = c.scrub(sanitizeMounts(s))
+			return
+		}
+	}
+}
+
+// kconfigKeys are the kernel config options kept by capture (the whole config
+// is thousands of lines); the collector reads the full file when present.
+var kconfigKeys = map[string]bool{
+	"CONFIG_BPF": true, "CONFIG_BPF_SYSCALL": true, "CONFIG_BPF_JIT": true, "CONFIG_BPF_JIT_ALWAYS_ON": true,
+	"CONFIG_XDP_SOCKETS": true, "CONFIG_NET_RX_BUSY_POLL": true, "CONFIG_RPS": true, "CONFIG_RFS_ACCEL": true,
+	"CONFIG_XPS": true, "CONFIG_HZ": true, "CONFIG_NO_HZ_FULL": true, "CONFIG_NO_HZ_IDLE": true,
+	"CONFIG_PREEMPT": true, "CONFIG_PREEMPT_VOLUNTARY": true, "CONFIG_PREEMPT_NONE": true, "CONFIG_PREEMPT_DYNAMIC": true,
+	"CONFIG_TRANSPARENT_HUGEPAGE": true, "CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS": true, "CONFIG_TRANSPARENT_HUGEPAGE_MADVISE": true,
+	"CONFIG_NUMA_BALANCING": true, "CONFIG_MEMCG": true, "CONFIG_CGROUPS": true, "CONFIG_CGROUP_BPF": true,
+	"CONFIG_PSI": true, "CONFIG_ZSWAP": true, "CONFIG_ZRAM": true, "CONFIG_KSM": true, "CONFIG_IO_URING": true,
+	"CONFIG_TCP_CONG_BBR": true, "CONFIG_TCP_CONG_CUBIC": true, "CONFIG_DEFAULT_TCP_CONG": true,
+	"CONFIG_NF_CONNTRACK": true, "CONFIG_IPV6": true, "CONFIG_USERFAULTFD": true, "CONFIG_SCHED_AUTOGROUP": true,
+	"CONFIG_HUGETLBFS": true, "CONFIG_DAMON": true, "CONFIG_IOMMU_DEFAULT_PASSTHROUGH": true, "CONFIG_INTEL_IOMMU": true,
+	"CONFIG_AMD_IOMMU": true, "CONFIG_BLK_CGROUP": true, "CONFIG_MQ_IOSCHED_DEADLINE": true, "CONFIG_MQ_IOSCHED_KYBER": true,
+	"CONFIG_IOSCHED_BFQ": true, "CONFIG_PAGE_POISONING": true, "CONFIG_INIT_ON_ALLOC_DEFAULT_ON": true,
+}
+
+// kconfig records the allowlisted options of the kernel config as
+// boot/config-<release> (what the collector reads without /proc/config.gz).
+func (c *capturer) kconfig() {
+	rel := strings.TrimSpace(c.snap.Files["proc/sys/kernel/osrelease"])
+	if rel == "" {
+		rel = readOptFile(filepath.Join(c.r.Proc, "sys/kernel/osrelease"))
+	}
+	var text string
+	if zr, err := os.Open(filepath.Join(c.r.Proc, "config.gz")); err == nil {
+		defer func() { _ = zr.Close() }()
+		if gz, err := gzip.NewReader(zr); err == nil {
+			b, _ := io.ReadAll(io.LimitReader(gz, 16<<20))
+			text = string(b)
+		}
+	}
+	if text == "" && rel != "" {
+		text, _ = readLimited(filepath.Join(filepath.Dir(c.r.Proc), "boot", "config-"+rel), 16<<20)
+	}
+	if text == "" || rel == "" {
+		return
+	}
+	var b strings.Builder
+	for k, v := range facts.ParseKconfig(text) {
+		if !kconfigKeys[k] {
+			continue
+		}
+		if v == "n" {
+			fmt.Fprintf(&b, "# %s is not set\n", k)
+		} else {
+			fmt.Fprintf(&b, "%s=%s\n", k, v)
+		}
+	}
+	lines := strings.Split(strings.TrimSpace(b.String()), "\n")
+	sort.Strings(lines)
+	c.snap.Files["boot/config-"+rel] = strings.Join(lines, "\n") + "\n"
+}
+
+func readOptFile(p string) string {
+	s, _ := readLimited(p, 4096)
+	return strings.TrimSpace(s)
 }
 
 func (c *capturer) misc() {

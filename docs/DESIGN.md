@@ -95,7 +95,7 @@ type RDMADev struct { Name string; Ports []RDMAPort }
 type RDMAPort struct { Num int; State, LinkLayer, Rate, NetDev string }
 type IOMMU struct { Enabled bool; Passthrough bool; Groups int }
 type Limits struct { FileMax, NrOpen, FileNrAllocated uint64 }
-type Proc struct { PID int; Comm string; Cmdline []string; NoFileSoft, NoFileHard, MemlockSoft, MemlockHard uint64 /* math.MaxUint64 = unlimited */; OpenFDs int; Unit string /* systemd unit from /proc/<pid>/cgroup, "" if none */ }
+type Proc struct { PID int; Comm string; Cmdline []string; NoFileSoft, NoFileHard, MemlockSoft, MemlockHard uint64 /* math.MaxUint64 = unlimited */; OpenFDs int; Unit string /* systemd unit from /proc/<pid>/cgroup, "" if none */ } // plus Container, NProcSoft/NProcHard, CoreSoft, OOMScoreAdj: see the amendments below
 type Tuned struct { Active bool; Profile string } // /etc/tuned/active_profile + tuned process
 ```
 
@@ -294,3 +294,45 @@ Recommendations with status `recommend` or `firing`, kinds `sysctl`, `sysfs`, `l
 
 ### Golden tests
 `advisor.RunGolden` materializes and collects each fixture once per call (cache keyed by fixture name, loaded in parallel, removed in parallel); `rules.ValidateWith` parses each fixture once. The whole `rules` package test went from about 35s to about 11s under load.
+
+## Engine amendments (fix pass 2)
+Backward compatible additions; no rule YAML or existing fixture changed. Rule-author guidance is in `rules/README.md` ("Expression builtins and new helpers").
+
+### Facts
+- `Facts.Mounts []Mount{Device, MountPoint, FSType string; Options []string; Disk string}` from `<Proc>/self/mounts`, else `<Proc>/mounts` (octal escapes such as `\040` decoded; a missing table is a warning and leaves `Mounts` empty). `Disk` is the parent whole-disk name resolved through sysfs by `facts.DiskOf(root, dev)`: a partition goes to the disk above it (the parent element of the `<Sys>/class/block/<part>` link), `/dev/mapper/<name>` and `dm-N` go to the first entry of `<Sys>/block/dm-N/slaves` (found by `dm/name`), md devices likewise; `""` for non-`/dev` devices or when unresolvable. Methods: `Facts.MountOf(path) Mount` (longest component-wise mount point; the later entry wins for stacked mounts; zero `Mount` without a table), `Facts.BlockDeviceOf(path) string`, `Mount.HasOpt(opt)` (exact option, or a bare key matching `key=value`).
+- `Kernel.Config map[string]string` from `<Proc>/config.gz` (gzip, read capped at 16 MiB), else `<root>/boot/config-<release>` (root = parent of `Proc`); `y`/`m`/value, `n` for `# CONFIG_X is not set`; nil when neither is readable (no warning). `facts.ParseKconfig` parses the text.
+- `Proc.OOMScoreAdj int` (`/proc/<pid>/oom_score_adj`), `Proc.NProcSoft`/`NProcHard` ("Max processes") and `Proc.CoreSoft` ("Max core file size"), unlimited = `math.MaxUint64`.
+- `workload.App.NProcSoft` (minimum non-zero across PIDs, like `NoFileSoft`) and `App.OOMScoreAdj` (maximum across PIDs: the least protected process decides).
+- `Proc.IOPrio`: not implemented (WONTFIX). The I/O priority of another process is only available from the `ioprio_get(2)` syscall; there is no `/proc/<pid>` file for it.
+
+### Expression environment
+- `sysctl(name)` / `sysctlNum(name)` fall back to `<Root.Proc>/sys/<path>` when the name is not in `Facts.Sysctl` (same rule as `kind: sysctl`, exported as `rules.SysctlValue`). Whitespace is normalised.
+- `mountOf(path) Mount`, `fsType(path)`, `mountHasOpt(path, opt)`, `blockOf(path)` (host paths; see `Facts.MountOf`), `kconfig(name)` (`""` when unknown).
+- `unlimited` (a `uint64` constant, `math.MaxUint64`) and `isUnlimited(x)` (`uint64`/`float64` at MaxUint64, or the strings `unlimited`/`infinity`). The expr parser rejects integer literals above int64, so the constant replaces `< 1e18` workarounds. `rules.IsUnlimited` is the Go form.
+- The expr builtins (`all`, `any`, `none`, `one`, `count`, `filter`, `map`, `keys`, `values`, `len`, `sum`, ...) are documented in `rules/README.md`; every example there is covered by `TestDocumentedBuiltins`.
+
+### `limit` kind
+`param` also accepts `LimitNPROC` (current = `App.NProcSoft`). `rules.LimitParams` has it, and `apply` maps `nproc` / `LimitNPROC` to the `LimitNPROC=` drop-in key. The generate renderer writes `LimitNPROC=` in systemd drop-ins unchanged; its limits.d fallback needs an `nproc` item (see "Open items for the renderer").
+
+### Conflicts (`advisor.Conflicts`, `advisor.ConflictBlock`)
+- `Conflicts(recs) []Conflict` returns what `Reconcile` finds, plus settings where the (merged) recommendation contradicts a rule that is already satisfied (status `ok`, `compare` `eq` or empty) at a different value: `Conflict{Method: "recommend-vs-ok", Kept: ["rule=value"], Resolved: false}`. Example: `app.postgres.overcommit_memory` recommends `vm.overcommit_memory=2` while `app.redis.overcommit_memory` is `ok` at 1, so applying postgres' value breaks redis' requirement. `Reconcile` itself, `generate` and `apply` are unchanged.
+- `Conflict.Genuine()` is `!Resolved`: proposals that disagree, as opposed to `gte`/`lte` merges that were resolved by max/min.
+- `ConflictBlock(cs) string` formats only genuine conflicts as a block for the top of a text report, or `""`:
+  ```
+  CONFLICT: 1 setting has rules that disagree. generate and apply keep the highest-scored proposal; review before applying.
+    vm.overcommit_memory
+      app.postgres.overcommit_memory proposes 2 (chosen)
+      app.redis.overcommit_memory proposes 1
+  ```
+  A `Kept` entry prints as `<rule> wants <value> is already satisfied and would be broken`. The renderer owner prints it before the first group of `render.Text` (and may drop the old trailing `conflicts:` lines for genuine ones).
+
+### CLI and loader
+- `validate --rules-dir DIR` fails with `no rule packs found ...` when DIR holds none of `kernel/`, `ai/`, `apps/`, `antipatterns/` (a wrong or missing directory, or `cp -r rules DEST` which nests the packs in `DEST/rules`; the message names that case). It used to print `OK: 0 rules`. `rules.Load` itself still accepts an empty tree (`rules.CheckPacks` is the check). `--rules-dir` help now says it replaces the embedded packs.
+- YAML errors of rule files and `sources.yaml` read `<path>:<line>: <message>` (one per problem; the path is relative to the rules directory), and the CLI prefixes `--rules-dir DIR`.
+- `capture` records `proc/mounts` (remote devices become `[remote]`; addr/credential options and overlay paths are dropped), `boot/config-<release>` limited to a fixed option list, `proc/<pid>/oom_score_adj`, "Max processes" and "Max core file size" limits, and the sysfs links needed for `Mount.Disk` (`class/block/*`, `block/dm-*/dm/name`, `block/{dm-*,md*}/slaves/*`).
+
+### Fixtures
+`engine-facts-2` (generator addition in `testdata/fixtures/.gen/engine2.go`): ext4 root on nvme0n1p2, xfs `noatime` LVM volume `vg0-data` on nvme0n1p3, an NFS share, tmpfs, `/dev/sdb1` with a space in its mount point, a boot kernel config, a postgres main process (`oom_score_adj` -900, nproc 4096/8192, core unlimited) and a worker, and `user.max_user_namespaces` outside the collected sysctl directories.
+
+### Open items for the renderer
+See the report of this pass: print `advisor.ConflictBlock(advisor.Conflicts(recs))` at the top of `render.Text`, and make `limitsConfLine` emit item `nproc` for `LimitNPROC`.

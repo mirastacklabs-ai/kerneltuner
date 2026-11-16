@@ -24,16 +24,18 @@ Status after the engine fix pass. Behaviour is documented in `docs/DESIGN.md` ("
 - [network] rps_cpus readback format (zero-padded hex mask) unverified. **WONTFIX** here: needs a real kernel; apply's verify compares whitespace-normalised text and rolls back on mismatch, so a wrong guess fails safe. Revisit with a real host capture.
 - [network] stock 10G+ hosts get 4 medium-risk recs from tuned values. **FIXED** in the engine: `require_evidence: true` is available; adding it to those rules is a pack change (not done here, rule YAML is out of scope for this pass).
 
-## Open — reported by app-pack authors after the fix pass
-- [envoy/httpd] No mount table / fstype facts (NFS sendfile advice impossible).
-- [envoy/httpd] No app config parsing; rules gate on host symptoms only (by design for v1).
-- [postgres] Need per-process oom_score_adj fact (/proc/<pid>/oom_score_adj) so oom advice can be ok.
-- [postgres] Document values()/all() expr builtins in rules/README.md.
-- [conflict] app.postgres.overcommit_memory=2 vs app.redis.overcommit_memory=1 on the same host: reconciliation must warn loudly, not pick silently.
-- [cncf] sysctl()/sysctlNum() expr helpers lack the Root.Proc/sys fallback the sysctl kind has (fs.inotify.*, net.bridge.* read as 0).
-- [cncf] `validate --rules-dir DIR` reported 0 rules on a copy of rules/ — bug.
-- [cncf] No facts: kernel config (/proc/config.gz, /boot/config-*), /proc/mounts (fstype, noatime), process ionice, oom_score_adj, NPROC/CORE limits.
-- [messaging] expr rejects uint64 literals > int64 (MaxUint64 unlimited); expose `unlimited` constant / isUnlimited().
-- [nosql] No nproc limit kind (ES/OpenSearch/Cassandra need LimitNPROC).
-- [nosql] sources.yaml YAML errors should name the file.
-- [cassandra] read_ahead per-device cannot tell which disk holds data (needs mounts→device mapping).
+## Reported by app-pack authors after the fix pass (engine fix pass 2)
+Details are in `docs/DESIGN.md` ("Engine amendments (fix pass 2)") and `rules/README.md`.
+
+- [envoy/httpd] No mount table / fstype facts (NFS sendfile advice impossible). **FIXED**: `Facts.Mounts`, `mountOf`, `fsType`, `mountHasOpt`, `blockOf`.
+- [envoy/httpd] No app config parsing; rules gate on host symptoms only. **WONTFIX**: by design for v1 (reading arbitrary application configs is out of scope and a privacy risk); gate on host facts, mounts and process limits instead.
+- [postgres] Need per-process oom_score_adj fact. **FIXED**: `Proc.OOMScoreAdj`, `App.OOMScoreAdj` (max across PIDs).
+- [postgres] Document values()/all() expr builtins in rules/README.md. **FIXED**: "Expression builtins and new helpers"; every example is a test.
+- [conflict] app.postgres.overcommit_memory=2 vs app.redis.overcommit_memory=1 must warn loudly. **FIXED in the engine**: `advisor.Conflicts` now also reports a recommendation that contradicts an already-satisfied `eq` rule; `advisor.ConflictBlock` formats the CONFLICT block. The text renderer still has to print it at the top of the report (citations/render owner).
+- [cncf] sysctl()/sysctlNum() lack the Root.Proc/sys fallback. **FIXED**: `rules.SysctlValue`.
+- [cncf] `validate --rules-dir DIR` reported 0 rules on a copy of rules/. **FIXED**: root cause was `Load` treating a directory without `kernel/`, `ai/`, `apps/` or `antipatterns/` as an empty rule set (a missing DIR, or `cp -r rules DEST`, which nests the packs under `DEST/rules`). `validate` now fails with a message naming the problem.
+- [cncf] No facts: kernel config, /proc/mounts, process ionice, oom_score_adj, NPROC/CORE limits. **FIXED**: `Kernel.Config` + `kconfig()`, `Facts.Mounts`, `Proc.OOMScoreAdj`, `Proc.NProcSoft/NProcHard/CoreSoft`, `App.NProcSoft`. **WONTFIX**: process ionice (`Proc.IOPrio`): the kernel offers it only through the `ioprio_get(2)` syscall, never via `/proc`, and issuing it for other processes is outside the observe-only read model. `LimitCORE` as a `limit` param is not done (optional).
+- [messaging] expr rejects uint64 literals > int64. **FIXED**: `unlimited` constant and `isUnlimited(x)`.
+- [nosql] No nproc limit kind. **FIXED**: `LimitNPROC` in the `limit` kind (advisor, validate, apply drop-in). The limits.d fallback of `generate --format limits` still labels it `nofile`; the renderer needs an `nproc` item (render owner).
+- [nosql] sources.yaml YAML errors should name the file. **FIXED**: loader errors are `<path>:<line>: <message>`.
+- [cassandra] read_ahead per-device cannot tell which disk holds data. **FIXED**: `blockOf(path)` and `Mount.Disk` (dm/partition resolved to the parent disk), e.g. `filter: item.Name == blockOf("/var/lib/cassandra")` on `foreach: block`.
