@@ -1,0 +1,5 @@
+description: "web-16c-64g-nginx booted with isolcpus=2-7 nohz_full=2-7"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "proc/cmdline": "BOOT_IMAGE=/boot/vmlinuz-5.15.0-91-generic root=/dev/nvme0n1p2 ro quiet splash isolcpus=2-7 nohz_full=2-7\n"

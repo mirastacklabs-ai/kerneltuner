@@ -1,0 +1,266 @@
+- id: vm.swappiness.fast_swap
+  title: Swappiness for in-memory (zram) swap
+  kind: sysctl
+  param: vm.swappiness
+  domain: memory
+  applies:
+    kernel: ">=5.8"
+    when: 'facts.Memory.SwapTotalBytes > 0 && exists("/sys/block/zram0")'
+  recommend: "133"
+  compare: gte
+  evidence:
+    - metric: psi.memory.some.avg10
+      value_gt: 15
+  namespaced: false
+  risk: medium
+  rationale: >-
+    Swappiness is the relative IO cost of swapping versus filesystem paging (0-200, default 60). The kernel doc says
+    in-memory swap such as zram or zswap can justify values above 100, and gives 133 for swap whose random IO is 2x
+    faster than the filesystem (x + 2x = 200). Kernel 5.8 made reclaim balance anonymous versus file pages by refault
+    rate and relative IO cost and allowed swappiness to be raised, so this only applies from 5.8. The 2x ratio is the
+    doc's example, not a measurement of this host.
+  advice: >-
+    A zram device exists and swap is configured, but kerneltuner cannot see which device holds the swap. Check
+    `cat /proc/swaps`: apply this only if swap is on zram/zswap, never when it is on a slow disk.
+  verify: "psi.memory.some.avg10 does not rise; pswpin/pswpout in /proc/vmstat and application latency stay flat or improve"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - https://kernelnewbies.org/Linux_5.8
+  tests:
+    - fixture: memory-zram-swap
+      expect: { status: recommend, proposed: "133" }
+    - fixture: memory-zram-swap-tuned
+      expect: { status: ok }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+
+- id: vm.dirty.writeback_window
+  title: Large dirty-page window with IO stalls
+  kind: report
+  domain: memory
+  detect: >-
+    sysctlNum("vm.dirty_bytes") == 0 &&
+    float(facts.Memory.TotalBytes) * sysctlNum("vm.dirty_ratio") / 100 > bytes("4G") &&
+    metric("psi.io.some.avg10") > 15
+  evidence:
+    - metric: psi.io.full.avg10
+      value_gt: 5
+  risk: medium
+  rationale: >-
+    dirty_ratio and dirty_background_ratio are percentages of available memory (free plus reclaimable pages), not of
+    total RAM, so on a large-memory host a percentage-based limit allows many GiB of dirty data to pile up before
+    writers are throttled, and a later flush can stall IO for a long time.
+    dirty_bytes and dirty_background_bytes are the absolute counterparts; writing one makes the matching ratio read 0.
+    This rule only reports: it fires when dirty_bytes is unset, ratio x total RAM exceeds 4 GiB (an upper bound, since
+    available memory is at most total) and IO PSI some avg10 is above 15 %, the same 150 ms-per-second stall level the
+    PSI doc uses in its trigger example. Both thresholds are our screening values, not kernel constants.
+  advice: >-
+    Size the window from the device: dirty_background_bytes ~ (sustained write MB/s x seconds you accept for a flush)
+    and dirty_bytes above it. Measure the device's sustained write rate first; no universal byte value is
+    recommended here. Leave it alone on read-mostly hosts (for example model loading), where it is irrelevant.
+  verify: "psi.io.some.avg10 and psi.io.full.avg10 fall; Dirty/Writeback in /proc/meminfo stay below the new limits"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+    - https://docs.kernel.org/accounting/psi.html
+  tests:
+    - fixture: memory-gpu-vm-misconfigured
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: vm.overcommit_memory.strict_inference_host
+  title: Strict overcommit (mode 2) on an accelerator or inference host
+  kind: antipattern
+  domain: memory
+  detect: >-
+    sysctlNum("vm.overcommit_memory") == 2 &&
+    (accelCount("") > 0 || hasApp("vllm") || hasApp("sglang") || hasApp("tgi") || hasApp("triton") ||
+     hasApp("llama.cpp") || hasApp("ollama") || hasApp("pytorch"))
+  risk: medium
+  rationale: >-
+    With vm.overcommit_memory=2 the kernel refuses allocations once committed address space would exceed swap plus
+    overcommit_ratio percent of RAM (or overcommit_kbytes), and the doc notes many programs malloc() huge amounts
+    "just-in-case". AI serving stacks map large model files and reserve big virtual ranges, so under mode 2 they can
+    see ENOMEM while plenty of RAM is free. The default is 0 (heuristic, rejects only obvious overcommits). This is
+    generic guidance; the Redis-specific overcommit rule lives in the redis pack.
+  advice: >-
+    Prefer mode 0. Mode 1 trades ENOMEM for the OOM killer. If strict accounting is a deliberate policy, raise
+    overcommit_ratio (or set overcommit_kbytes) to cover the serving process, and raise admin_reserve_kbytes and
+    user_reserve_kbytes as the doc says to for mode 2 so root can still log in and recover.
+  verify: "mmap/malloc ENOMEM disappears while MemAvailable is large; Committed_AS stays below CommitLimit in /proc/meminfo"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+  tests:
+    - fixture: memory-gpu-vm-misconfigured
+      expect: { status: firing }
+    - fixture: gpu-8xh100
+      expect: { status: ok }
+
+- id: vm.min_free_kbytes.too_low
+  title: min_free_kbytes below the kernel's safe floor
+  kind: antipattern
+  domain: memory
+  detect: 'exists("/proc/sys/vm/min_free_kbytes") && sysctlNum("vm.min_free_kbytes") < 1024'
+  risk: high
+  rationale: >-
+    min_free_kbytes feeds the minimum watermark that reserves memory for PF_MEMALLOC allocations. The kernel computes
+    it from lowmem at boot and on hotplug (and may raise it when THP is enabled), but once anyone writes the file it is
+    never adjusted again. The doc says a value under 1024KB leaves the system "subtly broken, and prone to deadlock
+    under high loads". A value this low is almost always a leftover from a bad tuning guide.
+  advice: >-
+    Remove the override so the kernel recomputes the value (reboot, or write a sane value). If reclaim latency is the
+    real concern, raise vm.watermark_scale_factor instead of min_free_kbytes.
+  verify: "cat /proc/sys/vm/min_free_kbytes is at or above the boot-time default"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+  tests:
+    - fixture: memory-gpu-vm-misconfigured
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: vm.watermark_scale_factor.reclaim_pressure
+  title: Direct reclaim or kswapd waking early
+  kind: report
+  domain: memory
+  detect: >-
+    rate("vmstat.allocstall") + rate("vmstat.allocstall_normal") + rate("vmstat.allocstall_movable") > 1 ||
+    rate("vmstat.kswapd_low_wmark_hit_quickly") > 1
+  evidence:
+    - metric: psi.memory.some.avg10
+      value_gt: 15
+  risk: medium
+  rationale: >-
+    watermark_scale_factor sets how much free memory kswapd keeps (default 10, i.e. 0.1 % of node memory; maximum
+    3000 = 30 %). The kernel doc names a high rate of threads entering direct reclaim (allocstall) or kswapd going to
+    sleep prematurely (kswapd_low_wmark_hit_quickly) as the sign that kswapd's free-page cushion is too small for the
+    allocation bursts. The doc gives no numeric cut-off; the 1 event/s threshold is our screening value. Prefer this
+    knob over min_free_kbytes.
+  advice: >-
+    Raise vm.watermark_scale_factor in steps (for example double it from the current {{index .facts.Sysctl "vm.watermark_scale_factor"}}),
+    re-measure after each step, and stop when the counters go quiet. Costs: more memory held free, more kswapd CPU,
+    smaller page cache. Do not touch min_free_kbytes for this.
+  verify: "rate of vmstat allocstall* and kswapd_low_wmark_hit_quickly falls to ~0; psi.memory.some.avg10 falls"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+  tests:
+    - fixture: memory-pressure-stall
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: vm.zone_reclaim_mode
+  title: NUMA zone reclaim should stay off
+  kind: sysctl
+  param: vm.zone_reclaim_mode
+  domain: memory
+  applies:
+    when: "len(facts.NUMA) > 1"
+  recommend: "0"
+  compare: eq
+  namespaced: false
+  risk: low
+  rationale: >-
+    zone_reclaim_mode makes the allocator reclaim (and optionally write back or swap) inside the local node before
+    falling back to a remote node. It is off by default, and the kernel doc says file servers and workloads that
+    benefit from cached data should leave it off because caching matters more than locality. Enabling it is only
+    justified when the workload is partitioned so each partition fits one node and remote access is measurably
+    costly; on a general or cache-heavy host it shrinks the usable page cache and adds reclaim latency.
+  advice: >-
+    If you deliberately set this for a per-node partitioned workload, ignore this recommendation. Otherwise check
+    numa_miss/numa_foreign/other_node in numastat before deciding.
+  verify: "page cache stays large (Cached in /proc/meminfo); no reclaim stalls (allocstall rate 0)"
+  sources:
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+  tests:
+    - fixture: memory-gpu-vm-misconfigured
+      expect: { status: recommend, proposed: "0" }
+    - fixture: gpu-8xh100
+      expect: { status: ok }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }
+
+- id: vm.thp.defrag_direct_stall
+  title: THP defrag=always stalls allocating tasks
+  kind: report
+  domain: memory
+  detect: 'facts.Memory.THPEnabled != "never" && facts.Memory.THPDefrag == "always"'
+  evidence:
+    - metric: vmstat.compact_stall
+      rate_gt: 0
+  risk: medium
+  rationale: >-
+    With defrag=always a task that requests a transparent huge page and cannot get one immediately stalls in direct
+    reclaim and compaction to build it. The kernel doc says this can suit virtual machines that benefit heavily from
+    THP and accept a delayed start; the default is madvise (direct reclaim only for MADV_HUGEPAGE regions). Combined
+    with enabled=always every anonymous mapping is eligible, so the stall can hit any application. Stalls are counted
+    by compact_stall in /proc/vmstat. This is a trade-off report, not a forced change.
+  advice: >-
+    Options, from least to most invasive: defrag=madvise (default), defrag=defer or defer+madvise (compact in the
+    background, khugepaged installs pages later), enabled=madvise, or never. Choose by measuring latency against
+    TLB-bound throughput; no value is right for every workload. Per-process opt-out: prctl(PR_SET_THP_DISABLE).
+  verify: "vmstat compact_stall rate falls; tail latency of allocation-heavy services improves; thp_fault_alloc is acceptable for TLB-bound jobs"
+  sources:
+    - https://docs.kernel.org/admin-guide/mm/transhuge.html
+  tests:
+    - fixture: legacy-4.9-c10k
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }
+
+- id: vm.thp.compaction_stalls
+  title: Tasks stalling on memory compaction with THP enabled
+  kind: report
+  domain: memory
+  detect: 'facts.Memory.THPEnabled != "never" && rate("vmstat.compact_stall") > 1'
+  evidence:
+    - metric: vmstat.thp_fault_fallback
+      rate_gt: 0
+  risk: medium
+  rationale: >-
+    The THP doc defines compact_stall as incremented every time a process stalls to run memory compaction so that a
+    huge page is free, and thp_fault_fallback as a page fault that could not get a huge page and used small pages.
+    A sustained compact_stall rate means THP allocation is costing CPU and latency; fallbacks alongside it mean the
+    effort is not even paying off, usually because memory is fragmented. The 1 stall/s threshold is a screening
+    value, not from the doc. Multi-size anonymous THP arrived in 6.8 and MADV_COLLAPSE in 6.1, which also change how
+    much THP a kernel attempts.
+  advice: >-
+    See vm.thp.defrag_direct_stall for the knobs. Also consider vm.defrag_mode on kernels that have it (the current doc
+    recommends enabling it right after boot because fragmentation can be permanent), or reserve static hugepages.
+  verify: "compact_stall and thp_fault_fallback rates fall"
+  sources:
+    - https://docs.kernel.org/admin-guide/mm/transhuge.html
+    - https://docs.kernel.org/admin-guide/sysctl/vm.html
+  tests:
+    - fixture: memory-thp-compaction-stalls
+      expect: { status: firing }
+    - fixture: cpu-amx-2s
+      expect: { status: ok }
+
+- id: vm.psi.memory_stall
+  title: Sustained memory pressure stalls
+  kind: report
+  domain: memory
+  detect: 'metric("psi.memory.some.avg10") > 15'
+  evidence:
+    - metric: psi.memory.full.avg10
+      value_gt: 0
+  risk: medium
+  rationale: >-
+    PSI "some" is the share of time at least one task is stalled on memory; "full" is the share when all non-idle
+    tasks are stalled at once, which the doc calls thrashing with severe performance impact. The 15 % some avg10
+    threshold matches the doc's own example trigger (150 ms stall per 1 s window). PSI is absent when the kernel is
+    built without CONFIG_PSI, in which case this rule stays silent.
+  advice: >-
+    Find the cause before tuning: working set larger than RAM (add memory or limit the workload), cgroup limits
+    too tight (check memory.high/max and per-cgroup pressure), or reclaim bursts (see
+    vm.watermark_scale_factor.reclaim_pressure). With zram or fast swap see vm.swappiness.fast_swap. With "full" above
+    zero, expect OOM or heavy refaults soon.
+  verify: "psi.memory.some.avg10 and psi.memory.full.avg10 drop below the threshold under the same load"
+  sources:
+    - https://docs.kernel.org/accounting/psi.html
+  tests:
+    - fixture: memory-pressure-stall
+      expect: { status: firing }
+    - fixture: web-16c-64g-nginx
+      expect: { status: ok }

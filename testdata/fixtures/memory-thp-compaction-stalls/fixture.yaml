@@ -1,0 +1,6 @@
+description: "cpu-amx-2s (THP enabled=always, defrag=madvise) with 12 compact_stall/s and 40 thp_fault_fallback/s"
+synthetic: true
+extends: cpu-amx-2s
+rates:
+  "vmstat.compact_stall": 12
+  "vmstat.thp_fault_fallback": 40

@@ -1,0 +1,5 @@
+description: "memory-zram-swap with vm.swappiness already raised to 133 for in-memory swap"
+synthetic: true
+extends: memory-zram-swap
+files:
+  "proc/sys/vm/swappiness": "133\n"

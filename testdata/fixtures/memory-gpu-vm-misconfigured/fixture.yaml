@@ -1,0 +1,10 @@
+description: "gpu-8xh100 with strict overcommit (2), zone_reclaim_mode=1, min_free_kbytes=512 and IO PSI some 32 / full 9"
+synthetic: true
+extends: gpu-8xh100
+files:
+  "proc/sys/vm/overcommit_memory": "2\n"
+  "proc/sys/vm/zone_reclaim_mode": "1\n"
+  "proc/sys/vm/min_free_kbytes": "512\n"
+values:
+  "psi.io.some.avg10": 32
+  "psi.io.full.avg10": 9

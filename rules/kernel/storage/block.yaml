@@ -1,0 +1,74 @@
+- id: block.scheduler.nvme_none
+  title: IO scheduler on NVMe devices
+  kind: sysfs
+  param: /sys/block/{item}/queue/scheduler
+  domain: storage
+  foreach: block
+  filter: 'item.Transport == "nvme" && !item.Rotational'
+  recommend: '"none"'
+  compare: eq
+  namespaced: false
+  risk: low
+  rationale: >-
+    The kernel picks the default elevator itself: mq-deadline for single-queue (or shared-tag) devices and none when
+    there are multiple hardware queues, which is the NVMe case (block/elevator.c, elevator_set_default). An NVMe disk
+    reporting another scheduler therefore got it from a distro udev rule, tuned profile or manual change. On a
+    multi-queue device with its own deep-queue arbitration, a software elevator adds per-request queuing, ordering and
+    merging cost that the device generally does not need; this is reasoning, not a measured number from the sources.
+    The ABI text confirms the file shows the active scheduler in brackets and writing a name switches it.
+  advice: >-
+    `echo none | sudo tee /sys/block/{{.target}}/queue/scheduler`. Not persistent: make it a udev rule or tuned disk
+    setting. Keep mq-deadline or bfq if you depend on its fairness or latency guarantees for mixed read/write
+    workloads on a shared device.
+  verify: "cat /sys/block/<disk>/queue/scheduler shows [none]; fio or application IO latency and CPU per IOPS are not worse"
+  sources:
+    - https://raw.githubusercontent.com/torvalds/linux/master/block/elevator.c
+    - https://docs.kernel.org/admin-guide/abi-stable.html
+  tests:
+    - fixture: storage-nvme-mq-deadline
+      expect: { status: recommend, proposed: "none", target: nvme0n1 }
+    - fixture: gpu-8xh100
+      expect: { status: ok, target: nvme0n1 }
+    - fixture: legacy-4.9-c10k
+      expect: { status: not-applicable }
+
+- id: block.read_ahead_kb.model_loading
+  title: Read-ahead for large sequential model reads
+  kind: sysfs
+  param: /sys/block/{item}/queue/read_ahead_kb
+  domain: storage
+  foreach: block
+  applies:
+    when: >-
+      accelCount("") > 0 || hasApp("vllm") || hasApp("sglang") || hasApp("tgi") || hasApp("triton") ||
+      hasApp("llama.cpp") || hasApp("ollama") || hasApp("pytorch")
+  recommend: "4096"
+  compare: gte
+  evidence:
+    - metric: psi.io.some.avg10
+      value_gt: 15
+    - metric: vmstat.pgmajfault
+      rate_gt: 0
+  namespaced: false
+  risk: low
+  rationale: >-
+    read_ahead_kb is the maximum read-ahead, in KB, for filesystems on a block device (it may be exceeded for
+    MADV_HUGEPAGE regions). Loading multi-GB weight files is a long sequential read, where a larger window means fewer,
+    bigger IOs. 4096 KiB is the value tuned's throughput-performance profile sets (readahead=>4096, unit KiB); applying
+    it to model loading is our inference, since tuned does not single out that case. It is per device and not
+    persistent, and it wastes IO and page cache on random-read workloads.
+  advice: >-
+    `echo 4096 | sudo tee /sys/block/{{.target}}/queue/read_ahead_kb`, persisted by a udev rule or the tuned disk
+    plugin. Only worth it on the device that holds model weights. Alternatives that avoid a device-wide change:
+    pre-read the file once or use MADV_WILLNEED in the loader.
+  verify: "model load time drops; psi.io.some.avg10 and major-fault rate during load do not rise afterwards under random-read traffic"
+  sources:
+    - https://docs.kernel.org/admin-guide/abi-stable.html
+    - https://raw.githubusercontent.com/redhat-performance/tuned/master/profiles/throughput-performance/tuned.conf
+  tests:
+    - fixture: gpu-8xh100
+      expect: { status: recommend, proposed: "4096", target: nvme0n1 }
+    - fixture: storage-gpu-nvme-tuned
+      expect: { status: ok, target: nvme0n1 }
+    - fixture: web-16c-64g-nginx
+      expect: { status: not-applicable }

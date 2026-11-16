@@ -1,0 +1,5 @@
+description: "web-16c-64g-nginx plus an 8 GiB zram device alongside 8 GiB of swap, swappiness left at the default 60"
+synthetic: true
+extends: web-16c-64g-nginx
+files:
+  "sys/block/zram0/disksize": "8589934592\n"

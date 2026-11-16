@@ -1,0 +1,16 @@
+- url: https://docs.kernel.org/admin-guide/sysctl/vm.html
+  project: linux
+  covers: vm.* sysctls (swappiness, dirty_*, overcommit_*, min_free_kbytes, watermark_scale_factor, zone_reclaim_mode, vmstat counters named in the text)
+  last_reviewed: "2026-11-16"
+- url: https://docs.kernel.org/admin-guide/mm/transhuge.html
+  project: linux
+  covers: THP enabled/defrag semantics, thp_fault_fallback and compact_stall counters
+  last_reviewed: "2026-11-16"
+- url: https://docs.kernel.org/accounting/psi.html
+  project: linux
+  covers: PSI some/full semantics, avg10 windows, 150ms/1s trigger example
+  last_reviewed: "2026-11-16"
+- url: https://kernelnewbies.org/Linux_5.8
+  project: kernelnewbies
+  covers: 5.8 reclaim balancing by refault and IO cost, swappiness range raised
+  last_reviewed: "2026-11-16"
