@@ -1,39 +1,35 @@
-# Status — 2026-11-16 (v1.0.0 release candidate on `main`)
+# Status
 
-## Done (all on `main`, pushed)
-- **Engine:**
-  - facts, including accelerators, RDMA, mounts, kernel config, and per-process limits/OOM
-  - workload detection: 34 apps, plus `--workload`
-  - metrics, rules engine, advisor with reconciliation and conflicts
-  - renderers with citations
-  - commands: `scan`, `explain`, `generate`, `sources [--check]`, `validate`, `capture`, `agent`, `status`, `apply`, `rollback`
-- **Knowledge base:** 137 rules and 148 sources. Every source carries a verbatim quote verified live by `sources --check`, and there are 398 golden tests.
-- **Docs:** README, COVERAGE, RULE-AUTHORING, CONTRIBUTING, SECURITY, NOTICE, CHANGELOG.
-- **Tests:** `make e2e` covers 7 scenarios and all pass. CI is green.
-- **Security reviews:** two passes found 0 P0, 5 P1, 12 P2 and 21 P3. Every P1, P2 and P3 is fixed (Q18 deferred), each with a regression test.
-- **Workflows:**
-  - least-privilege permissions on every job
-  - drift job fails properly
-  - syft and cosign installer
-  - build provenance
-  - dependabot cooldown
-- **Repo settings:**
-  - `release` environment, with the maintainer as required reviewer and `v*` tags only
-  - tag ruleset `protect-release-tags`
-- **Approval:** the maintainer approved the rc and final release runs (2026-11-16).
+## v1.0.0: released 2026-11-17
+- Release: https://github.com/mirastacklabs-ai/kerneltuner/releases/tag/v1.0.0 (commit `db86051`)
+- Contents:
+  - 137 rules and 148 sources, every source with a verbatim quote checked against the live page
+  - 398 golden tests
+  - 8 e2e scenarios
+- Verified after publishing:
+  - sha256 checksums
+  - cosign keyless signature on `checksums.txt`
+  - SLSA v1 build provenance (`gh attestation verify`)
+  - SPDX SBOMs
+  - the deb installs and runs
+  - `install.sh` resolves `latest` and verifies the signature and sha256
+  - `scan` on a real kernel reports 0 warnings
+- `v1.0.0-rc.1` is kept as the rehearsal pre-release.
 
-## Remaining to v1.0.0
-1. **Follow-ups from the security-fix agent:** done (cosign pinned to v2.5.3, CI fixtures env, `validate` errors without fixtures unless `--skip-golden`, docs, `make validate`).
-2. **Focused read-only re-review** of the security-fix merge (`ce48fe4`): `internal/apply/safefs.go`, snapshot validation, the reconcile floors/ceilings, `--fixture` safety, and capture redaction.
-3. **Rehearsal:** tag `v1.0.0-rc.1`, then approve the `release` environment deployment via the API. Verify:
-   - assets
-   - `checksums.txt` plus `.sig`/`.pem`
-   - provenance (`gh attestation verify`)
-   - SBOMs
-   - deb/rpm
-   - `install.sh` against the rc
-4. **Final:** tag `v1.0.0`, approve, verify, then `docker rmi goreleaser/goreleaser:v2.20.2`.
+## Post-v1 (tracked as issues, label `post-v1`)
+- #2: cgroup line selection for unit names
+- #3: `O_NONBLOCK` on managed-path opens
+- #4: preserve owner and SELinux label on atomic replace
+- #5: review the areas not reached in the v1.0.0 review
+- #6: `--etc-root` / `--var-root`
+- Larger ideas from `docs/COVERAGE.md`:
+  - a benchmark harness
+  - config readers for nginx, PostgreSQL and Kafka
+  - real-host fixture contributions, especially GPU hosts
 
-## Housekeeping
-- No worktrees, no `dist/`, and no leftover e2e volumes. The Go build cache is in the Docker volume `kerneltuner-gocache`; trim it with `find /go/cache -type f -mmin +60 -delete`.
-- Downloaded upstream pages live in the session scratchpad archive. They aren't needed, because `sources --check` refetches.
+## Release process (what worked)
+1. Run `make build test lint validate test-nonroot e2e`. All must pass.
+2. Push `main` and wait for CI to go green.
+3. Tag `vX.Y.Z-rc.N` and approve the `release` environment.
+4. Verify the rc: checksums, cosign, attestation, SBOM, deb/rpm and `install.sh`.
+5. Tag `vX.Y.Z` on the same commit and approve. `GORELEASER_CURRENT_TAG` makes the run publish the tag that triggered it.
